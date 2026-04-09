@@ -35,6 +35,7 @@ class InputRequired(AppServerError):
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AppServerConfig:
     """Configuration for the Codex app-server connection."""
@@ -51,6 +52,7 @@ class AppServerConfig:
 # ---------------------------------------------------------------------------
 # AppServer
 # ---------------------------------------------------------------------------
+
 
 class AppServer:
     """Manages a single Codex app-server subprocess over JSON-RPC 2.0 / stdio."""
@@ -212,9 +214,7 @@ class AppServer:
     async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         msg_id = self._next_id
         self._next_id += 1
-        await self._send(
-            {"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params}
-        )
+        await self._send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params})
         return await self._read_response(msg_id)
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
@@ -285,8 +285,7 @@ class AppServer:
                     await self._respond_approval(msg, approved=True)
                 else:
                     raise AppServerError(
-                        f"Command execution approval required under policy "
-                        f"{self._config.approval_policy!r}"
+                        f"Command execution approval required under policy {self._config.approval_policy!r}"
                     )
                 continue
 
@@ -319,14 +318,10 @@ class AppServer:
         # If we fall through without turn/completed, return whatever we have.
         return self._usage
 
-    async def _respond_approval(
-        self, msg: dict[str, Any], *, approved: bool
-    ) -> None:
+    async def _respond_approval(self, msg: dict[str, Any], *, approved: bool) -> None:
         resp_id = msg.get("id")
         if resp_id is not None:
-            await self._send(
-                {"jsonrpc": "2.0", "id": resp_id, "result": {"approved": approved}}
-            )
+            await self._send({"jsonrpc": "2.0", "id": resp_id, "result": {"approved": approved}})
 
     async def _respond_user_input(self, msg: dict[str, Any]) -> None:
         resp_id = msg.get("id")
@@ -348,9 +343,7 @@ class AppServer:
         result = await self._tools.execute(tool_name, arguments)
 
         if resp_id is not None:
-            await self._send(
-                {"jsonrpc": "2.0", "id": resp_id, "result": result}
-            )
+            await self._send({"jsonrpc": "2.0", "id": resp_id, "result": result})
 
     async def _read_stderr(self) -> None:
         assert self._proc and self._proc.stderr

@@ -10,23 +10,18 @@ This is the Python equivalent of the Elixir ``StatusDashboard`` GenServer.
 from __future__ import annotations
 
 import os
-import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import datetime, timezone
 
 from symphony.observability import (
     ANSI_RE,
-    EVENT_MAP,
-    SPARKLINE_CHARS,
     TPSTracker,
     format_timestamp,
-    humanize_event,
     sparkline,
     strip_ansi,
 )
-from symphony.orchestrator import OrchestratorSnapshot, RunningEntry, RetryEntry
+from symphony.orchestrator import OrchestratorSnapshot, RetryEntry, RunningEntry
 
 # ---------------------------------------------------------------------------
 # ANSI colour helpers
@@ -81,8 +76,8 @@ def _state_colour(state: str) -> str:
 # Box-drawing helpers
 # ---------------------------------------------------------------------------
 
-BOX_H = "\u2500"   # ─
-BOX_V = "\u2502"   # │
+BOX_H = "\u2500"  # ─
+BOX_V = "\u2502"  # │
 BOX_TL = "\u250c"  # ┌
 BOX_TR = "\u2510"  # ┐
 BOX_BL = "\u2514"  # └
@@ -100,6 +95,7 @@ def _hline(width: int, left: str = BOX_TL, right: str = BOX_TR) -> str:
 # Visible-length helper (ignores ANSI escapes for padding)
 # ---------------------------------------------------------------------------
 
+
 def _visible_len(s: str) -> int:
     return len(ANSI_RE.sub("", s))
 
@@ -115,6 +111,7 @@ def _pad(s: str, width: int) -> str:
 # ---------------------------------------------------------------------------
 # StatusDashboard
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class StatusDashboard:
@@ -133,10 +130,10 @@ class StatusDashboard:
 
     project_url: str = ""
     server_host: str = ""
-    server_port: Optional[int] = None
-    bound_port: Optional[int] = None
+    server_port: int | None = None
+    bound_port: int | None = None
     render_interval_ms: int = 16
-    terminal_width: Optional[int] = None
+    terminal_width: int | None = None
 
     # -- internal bookkeeping (not constructor args) -------------------------
     _last_render_at: float = field(default=0.0, init=False, repr=False)
@@ -184,8 +181,8 @@ class StatusDashboard:
             lines.append(self._render_retry_header(width))
             lines.append(_hline(width, left=BOX_ML, right=BOX_MR))
             now = datetime.now(timezone.utc)
-            for _ident, entry in sorted(snapshot.retry_queue.items()):
-                lines.append(self._render_retry_row(entry, width, now))
+            for _retry_ident, retry_entry in sorted(snapshot.retry_queue.items()):
+                lines.append(self._render_retry_row(retry_entry, width, now))
             lines.append(_hline(width, left=BOX_ML, right=BOX_MR))
 
         # Throughput
@@ -213,7 +210,7 @@ class StatusDashboard:
         self._render_count += 1
         return "\n".join(lines)
 
-    def maybe_render(self, snapshot: OrchestratorSnapshot) -> Optional[str]:
+    def maybe_render(self, snapshot: OrchestratorSnapshot) -> str | None:
         """Coalesced render: returns the rendered string only if enough time
         has elapsed since the last render. Otherwise marks a pending update
         and returns ``None``.
@@ -229,7 +226,7 @@ class StatusDashboard:
             self._pending = True
             return None
 
-    def flush_pending(self, snapshot: OrchestratorSnapshot) -> Optional[str]:
+    def flush_pending(self, snapshot: OrchestratorSnapshot) -> str | None:
         """If there is a pending update, render it now regardless of interval."""
         if self._pending:
             self._last_render_at = time.monotonic()
@@ -239,7 +236,7 @@ class StatusDashboard:
 
     # -- private rendering helpers -------------------------------------------
 
-    def _dashboard_url(self) -> Optional[str]:
+    def _dashboard_url(self) -> str | None:
         """Build the dashboard URL from server config."""
         port = self.bound_port or self.server_port
         if port is None:
@@ -262,7 +259,11 @@ class StatusDashboard:
 
     def _render_agent_header(self, width: int) -> str:
         cols = ["ISSUE", "STATE", "SESSION", "TURNS", "TOKENS", "EVENT", "STARTED", "HOST"]
-        row = f"{BOX_V} " + "  ".join(f"{_bold(c):>10s}" if i > 1 else f"{_bold(c):<12s}" for i, c in enumerate(cols)) + f"  {BOX_V}"
+        row = (
+            f"{BOX_V} "
+            + "  ".join(f"{_bold(c):>10s}" if i > 1 else f"{_bold(c):<12s}" for i, c in enumerate(cols))
+            + f"  {BOX_V}"
+        )
         return _pad(row, width)
 
     def _render_agent_row(self, entry: RunningEntry, width: int) -> str:
@@ -294,9 +295,7 @@ class StatusDashboard:
         row = f"{BOX_V} " + "  ".join(f"{_bold(c):<12s}" for c in cols) + f"  {BOX_V}"
         return _pad(f"{title}  {BOX_V}\n" + row, width)
 
-    def _render_retry_row(
-        self, entry: RetryEntry, width: int, now: datetime
-    ) -> str:
+    def _render_retry_row(self, entry: RetryEntry, width: int, now: datetime) -> str:
         issue_id = entry.issue.identifier[:12]
         attempt = str(entry.attempt)
         due_delta = entry.due_at - now
@@ -320,14 +319,10 @@ class StatusDashboard:
         total_tok = totals.get("total_tokens", 0)
         tps = self._tps_tracker.tps(time.monotonic())
         graph = sparkline(self._tps_tracker._history, width=30)
-        line = (
-            f"{BOX_V}  Tokens: {total_tok:,}  "
-            f"TPS: {tps:.0f}  "
-            f"{graph}  {BOX_V}"
-        )
+        line = f"{BOX_V}  Tokens: {total_tok:,}  TPS: {tps:.0f}  {graph}  {BOX_V}"
         return _pad(line, width)
 
-    def _render_rate_limits(self, limits: dict, width: int) -> str:
+    def _render_rate_limits(self, limits: dict[str, object], width: int) -> str:
         parts = []
         for k, v in sorted(limits.items()):
             parts.append(f"{k}={v}")

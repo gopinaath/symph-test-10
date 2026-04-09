@@ -63,25 +63,15 @@ class MemoryTracker(Tracker):
     # --- Tracker interface ---
 
     async def fetch_candidate_issues(self) -> list[Issue]:
-        return [
-            deepcopy(issue)
-            for issue in self.issues.values()
-            if issue.state in self._candidate_states
-        ]
+        return [deepcopy(issue) for issue in self.issues.values() if issue.state in self._candidate_states]
 
     async def fetch_issues_by_states(self, states: list[str]) -> list[Issue]:
         if not states:
             return []
         state_set = set(states)
-        return [
-            deepcopy(issue)
-            for issue in self.issues.values()
-            if issue.state in state_set
-        ]
+        return [deepcopy(issue) for issue in self.issues.values() if issue.state in state_set]
 
-    async def fetch_issue_states_by_ids(
-        self, identifiers: list[str]
-    ) -> dict[str, str | None]:
+    async def fetch_issue_states_by_ids(self, identifiers: list[str]) -> dict[str, str | None]:
         result: dict[str, str | None] = {}
         for ident in identifiers:
             issue = self.issues.get(ident)

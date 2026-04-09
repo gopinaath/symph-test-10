@@ -36,8 +36,8 @@ def parse_ssh_target(target: str) -> SSHTarget:
         bracket_end = rest.find("]")
         if bracket_end == -1:
             return SSHTarget(user=user, host=rest, port=None)
-        host = rest[:bracket_end + 1]
-        after = rest[bracket_end + 1:]
+        host = rest[: bracket_end + 1]
+        after = rest[bracket_end + 1 :]
         if after.startswith(":"):
             port = int(after[1:])
         return SSHTarget(user=user, host=host, port=port)

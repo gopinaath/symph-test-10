@@ -87,10 +87,7 @@ class GitHubTracker(Tracker):
         from symphony.models import BlockerInfo
 
         blocked_ids = self._extract_blocked_by(body)
-        blockers = [
-            BlockerInfo(id=bid, identifier=bid, state="unknown")
-            for bid in blocked_ids
-        ]
+        blockers = [BlockerInfo(id=bid, identifier=bid, state="unknown") for bid in blocked_ids]
 
         return Issue(
             id=str(data["number"]),
@@ -106,9 +103,7 @@ class GitHubTracker(Tracker):
             labels=label_names,
         )
 
-    async def _paginated_get(
-        self, url: str, params: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    async def _paginated_get(self, url: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         params = dict(params or {})
         params.setdefault("per_page", _PAGE_SIZE)
         page = 1
@@ -165,9 +160,7 @@ class GitHubTracker(Tracker):
                 deduped.append(iss)
         return deduped
 
-    async def fetch_issue_states_by_ids(
-        self, identifiers: list[str]
-    ) -> dict[str, str | None]:
+    async def fetch_issue_states_by_ids(self, identifiers: list[str]) -> dict[str, str | None]:
         result: dict[str, str | None] = {}
         for ident in identifiers:
             resp = await self._client.get(self._repo_url(f"/issues/{ident}"))
@@ -195,10 +188,8 @@ class GitHubTracker(Tracker):
         current_labels = [lbl["name"] for lbl in data.get("labels", [])]
 
         # Remove existing state labels.
-        all_state_labels = set(self._state_labels.values()) | set(
-            self._candidate_states
-        )
-        new_labels = [l for l in current_labels if l not in all_state_labels]
+        all_state_labels = set(self._state_labels.values()) | set(self._candidate_states)
+        new_labels = [lbl for lbl in current_labels if lbl not in all_state_labels]
         new_labels.append(label)
 
         gh_state = "closed" if state == "closed" else "open"

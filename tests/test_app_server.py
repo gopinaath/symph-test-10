@@ -147,9 +147,7 @@ class TestStartup:
         cwd = tempfile.mkdtemp()
         proc = _make_process(_init_ok())
 
-        with patch(
-            "asyncio.create_subprocess_exec", return_value=proc
-        ) as mock_exec:
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
             server = AppServer(AppServerConfig())
             await server.start(cwd)
 
@@ -171,9 +169,7 @@ class TestStartup:
         cfg = AppServerConfig(command=custom_cmd)
         proc = _make_process(_init_ok())
 
-        with patch(
-            "asyncio.create_subprocess_exec", return_value=proc
-        ) as mock_exec:
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
             server = AppServer(cfg)
             await server.start(cwd)
             cmd = list(mock_exec.call_args[0])
@@ -190,13 +186,13 @@ class TestStartup:
         proc = _make_process(_init_ok(), _thread_ok())
 
         server = await _start_server(config=cfg, process=proc, cwd=cwd)
-        thread_id = await server.start_thread(cwd, approval_policy="on-failure", sandbox_policy="network-none")
+        await server.start_thread(cwd, approval_policy="on-failure", sandbox_policy="network-none")
 
         # Parse what was written to stdin — the third message should be
         # thread/start (after initialize + initialized notification).
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        thread_start = [l for l in lines if l.get("method") == "thread/start"]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        thread_start = [ln for ln in lines if ln.get("method") == "thread/start"]
         assert len(thread_start) == 1
         params = thread_start[0]["params"]
         assert params["approvalPolicy"] == "on-failure"
@@ -251,8 +247,8 @@ class TestSandboxPolicy:
         )
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        turn_start = [l for l in lines if l.get("method") == "turn/start"]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        turn_start = [ln for ln in lines if ln.get("method") == "turn/start"]
         assert len(turn_start) == 1
         assert turn_start[0]["params"]["sandboxPolicy"] == "network-none"
 
@@ -330,12 +326,12 @@ class TestApprovalPolicies:
 
         server = await _start_server(config=cfg, process=proc, cwd=cwd)
         await server.start_thread(cwd)
-        result = await server.run_turn(input_text="list files", cwd=cwd)
+        await server.run_turn(input_text="list files", cwd=cwd)
 
         # Verify an approval response was sent back.
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        approvals = [l for l in lines if l.get("id") == 100 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        approvals = [ln for ln in lines if ln.get("id") == 100 and "result" in ln]
         assert len(approvals) == 1
         assert approvals[0]["result"]["approved"] is True
 
@@ -364,8 +360,8 @@ class TestApprovalPolicies:
         await server.run_turn(input_text="run it", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        approvals = [l for l in lines if l.get("id") == 200 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        approvals = [ln for ln in lines if ln.get("id") == 200 and "result" in ln]
         assert len(approvals) == 1
         assert approvals[0]["result"]["approved"] is True
 
@@ -399,8 +395,8 @@ class TestUserInput:
         await server.run_turn(input_text="go", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        answers = [l for l in lines if l.get("id") == 300 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        answers = [ln for ln in lines if ln.get("id") == 300 and "result" in ln]
         assert len(answers) == 1
         assert "non-interactive" in answers[0]["result"]["answer"].lower()
 
@@ -430,8 +426,8 @@ class TestUserInput:
         await server.run_turn(input_text="go", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        answers = [l for l in lines if l.get("id") == 301 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        answers = [ln for ln in lines if ln.get("id") == 301 and "result" in ln]
         assert len(answers) == 1
         assert "non-interactive" in answers[0]["result"]["answer"].lower()
 
@@ -459,15 +455,13 @@ class TestDynamicTools:
         )
 
         registry = DynamicToolRegistry()
-        server = await _start_server(
-            process=proc, cwd=cwd, tool_registry=registry
-        )
+        server = await _start_server(process=proc, cwd=cwd, tool_registry=registry)
         await server.start_thread(cwd)
         await server.run_turn(input_text="use tool", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        tool_resp = [l for l in lines if l.get("id") == 400 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        tool_resp = [ln for ln in lines if ln.get("id") == 400 and "result" in ln]
         assert len(tool_resp) == 1
         assert tool_resp[0]["result"]["success"] is False
         assert "Unsupported tool" in tool_resp[0]["result"]["output"]
@@ -502,15 +496,13 @@ class TestDynamicTools:
             echo_handler,
         )
 
-        server = await _start_server(
-            process=proc, cwd=cwd, tool_registry=registry
-        )
+        server = await _start_server(process=proc, cwd=cwd, tool_registry=registry)
         await server.start_thread(cwd)
         await server.run_turn(input_text="echo", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        tool_resp = [l for l in lines if l.get("id") == 401 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        tool_resp = [ln for ln in lines if ln.get("id") == 401 and "result" in ln]
         assert len(tool_resp) == 1
         assert tool_resp[0]["result"]["success"] is True
         assert tool_resp[0]["result"]["output"] == "hello"
@@ -545,15 +537,13 @@ class TestDynamicTools:
             boom_handler,
         )
 
-        server = await _start_server(
-            process=proc, cwd=cwd, tool_registry=registry
-        )
+        server = await _start_server(process=proc, cwd=cwd, tool_registry=registry)
         await server.start_thread(cwd)
         await server.run_turn(input_text="boom", cwd=cwd)
 
         written = proc.stdin.written.decode()
-        lines = [json.loads(l) for l in written.strip().split("\n") if l.strip()]
-        tool_resp = [l for l in lines if l.get("id") == 402 and "result" in l]
+        lines = [json.loads(ln) for ln in written.strip().split("\n") if ln.strip()]
+        tool_resp = [ln for ln in lines if ln.get("id") == 402 and "result" in ln]
         assert len(tool_resp) == 1
         assert tool_resp[0]["result"]["success"] is False
         assert "kaboom" in tool_resp[0]["result"]["output"]
@@ -665,9 +655,7 @@ class TestSSH:
         )
         proc = _make_process(_init_ok())
 
-        with patch(
-            "asyncio.create_subprocess_exec", return_value=proc
-        ) as mock_exec:
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
             server = AppServer(cfg)
             await server.start(cwd)
 

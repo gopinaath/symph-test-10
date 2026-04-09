@@ -28,10 +28,7 @@ def _resolve_env(value: Any) -> Any:
             env_name = m.group(1)
             resolved = os.environ.get(env_name)
             if resolved is None:
-                raise ValueError(
-                    f"Environment variable {env_name!r} referenced by "
-                    f"${env_name} is not set"
-                )
+                raise ValueError(f"Environment variable {env_name!r} referenced by ${env_name} is not set")
             return resolved
     return value
 
@@ -138,9 +135,7 @@ class CodexConfig(BaseModel):
     def _validate_policy(cls, v: str) -> str:
         allowed = {"suggest", "auto-edit", "full-auto"}
         if v not in allowed:
-            raise ValueError(
-                f"codex.approval_policy must be one of {allowed}, got {v!r}"
-            )
+            raise ValueError(f"codex.approval_policy must be one of {allowed}, got {v!r}")
         return v
 
 
@@ -187,9 +182,7 @@ class Config(BaseModel):
     def from_yaml(cls, data: dict[str, Any]) -> Config:
         """Build a ``Config`` from a parsed YAML dict (front matter)."""
         if not isinstance(data, dict):
-            raise TypeError(
-                f"YAML front matter must be a mapping, got {type(data).__name__}"
-            )
+            raise TypeError(f"YAML front matter must be a mapping, got {type(data).__name__}")
         return cls.model_validate(data)
 
     @model_validator(mode="after")
@@ -197,9 +190,7 @@ class Config(BaseModel):
         # Ensure terminal and active states don't overlap.
         overlap = set(self.tracker.active_states) & set(self.tracker.terminal_states)
         if overlap:
-            raise ValueError(
-                f"active_states and terminal_states overlap: {overlap}"
-            )
+            raise ValueError(f"active_states and terminal_states overlap: {overlap}")
         return self
 
 

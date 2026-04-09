@@ -38,11 +38,13 @@ class PubSub:
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\[\??\d+[hl]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
+
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
 
 
 SPARKLINE_CHARS = " ▁▂▃▄▅▆▇█"
+
 
 def sparkline(values: list[float], width: int = 30) -> str:
     if not values:
@@ -54,6 +56,7 @@ def sparkline(values: list[float], width: int = 30) -> str:
 @dataclass
 class TPSTracker:
     """Rolling token-per-second tracker with 5-second window."""
+
     _samples: list[tuple[float, int]] = field(default_factory=list)
     _last_tps: float = 0.0
     _last_tps_at: float = 0.0

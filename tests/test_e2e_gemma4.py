@@ -67,7 +67,10 @@ class TestGemma4Connectivity:
             json={
                 "model": MODEL_ID,
                 "messages": [
-                    {"role": "user", "content": "Write a Python function `add(a, b)` that returns a+b. Only the function, no explanation."}
+                    {
+                        "role": "user",
+                        "content": "Write a Python function `add(a, b)` that returns a+b. Only the function, no explanation.",
+                    }
                 ],
                 "max_tokens": 64,
                 "temperature": 0.0,
@@ -94,9 +97,7 @@ class TestGemma4Connectivity:
                             "description": "Evaluate a math expression",
                             "parameters": {
                                 "type": "object",
-                                "properties": {
-                                    "expression": {"type": "string", "description": "Math expression"}
-                                },
+                                "properties": {"expression": {"type": "string", "description": "Math expression"}},
                                 "required": ["expression"],
                             },
                         },
@@ -110,9 +111,8 @@ class TestGemma4Connectivity:
         assert r.status_code == 200
         msg = r.json()["choices"][0]["message"]
         # Gemma 4 may put tool calls in content or tool_calls field
-        has_tool_call = (
-            (msg.get("tool_calls") and len(msg["tool_calls"]) > 0)
-            or ("calculator" in (msg.get("content") or ""))
+        has_tool_call = (msg.get("tool_calls") and len(msg["tool_calls"]) > 0) or (
+            "calculator" in (msg.get("content") or "")
         )
         assert has_tool_call, f"Expected tool call, got: {msg}"
 

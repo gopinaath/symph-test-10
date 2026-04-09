@@ -1,12 +1,17 @@
 """CLI entrypoint for Symphony."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import os
 import sys
 
+from symphony.config import Config
+from symphony.tracker.base import Tracker
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Symphony — autonomous coding orchestrator",
     )
@@ -50,7 +55,7 @@ def main():
         sys.exit(1)
 
     # Resolve workflow path
-    workflow_path = args.workflow_path
+    workflow_path: str = args.workflow_path
     if workflow_path is None:
         workflow_path = os.path.join(os.getcwd(), "WORKFLOW.md")
     else:
@@ -64,7 +69,7 @@ def main():
     # Configure logging
     from symphony.log_file import configure_logging
 
-    logs_root = args.logs_root
+    logs_root: str | None = args.logs_root
     if logs_root:
         logs_root = os.path.expanduser(os.path.expandvars(logs_root))
         logs_root = os.path.abspath(logs_root)
@@ -86,17 +91,17 @@ def main():
         sys.exit(1)
 
 
-async def _run(workflow_path: str, port_override: int | None = None):
+async def _run(workflow_path: str, port_override: int | None = None) -> None:
     """Main async entry point."""
     from symphony.api import create_app
-    from symphony.config import Config
     from symphony.observability import PubSub
-    from symphony.orchestrator import Orchestrator
+    from symphony.orchestrator import AgentResult, Orchestrator
     from symphony.workflow import Workflow
+    from symphony.workspace import Workspace, WorkspaceConfig
 
     # Load workflow
     workflow = Workflow.parse(workflow_path)
-    config = Config.from_yaml(workflow.config)
+    config = workflow.config
 
     # Override port if specified
     if port_override is not None:
@@ -106,15 +111,24 @@ async def _run(workflow_path: str, port_override: int | None = None):
     tracker = _create_tracker(config)
 
     # Create orchestrator
-    from symphony.workspace import Workspace
-    workspace = Workspace(config.workspace.root)
+    ws_config = WorkspaceConfig(root=config.workspace.root)
+    workspace = Workspace(ws_config)
 
     pubsub = PubSub()
+
+    # Placeholder agent runner factory
+    async def _agent_runner(
+        issue: object,
+        workspace_path: str | None,
+        worker_host: str | None,
+    ) -> AgentResult:
+        return AgentResult()
+
     orchestrator = Orchestrator(
         config=config,
         tracker=tracker,
         workspace=workspace,
-        pubsub=pubsub,
+        agent_runner_factory=_agent_runner,
     )
 
     # Start API server if dashboard enabled
@@ -139,21 +153,20 @@ async def _run(workflow_path: str, port_override: int | None = None):
         await orchestrator.start()
 
 
-def _create_tracker(config):
+def _create_tracker(config: Config) -> Tracker:
     """Create the appropriate tracker based on config."""
     kind = config.tracker.kind
     if kind == "memory":
         from symphony.tracker.memory import MemoryTracker
+
         return MemoryTracker()
     elif kind == "github":
         from symphony.tracker.github import GitHubTracker
+
         return GitHubTracker(
-            endpoint=config.tracker.endpoint,
-            api_key=config.tracker.api_key,
-            project_slug=config.tracker.project_slug,
-            assignee=config.tracker.assignee,
-            active_states=config.tracker.active_states,
-            terminal_states=config.tracker.terminal_states,
+            owner=config.tracker.project_slug or "",
+            repo=config.tracker.project_slug or "",
+            token=config.tracker.api_key or "",
         )
     else:
         raise ValueError(f"Unsupported tracker kind: {kind}")

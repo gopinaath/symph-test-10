@@ -39,22 +39,19 @@ def safe_resolve(path: str | Path, root: str | Path) -> Path | SafeResolveError:
     # but without following symlinks yet (we do that segment-by-segment below).
     # For existing paths we use resolve(); for non-existing we use absolute + normpath.
     import os
+
     normalized = Path(os.path.normpath(str(target)))
 
     # Determine the segments *below* root that we actually need to check.
     try:
         suffix_parts = normalized.relative_to(root).parts
     except ValueError:
-        return SafeResolveError(
-            f"path escapes root: {normalized} is not under {root}"
-        )
+        return SafeResolveError(f"path escapes root: {normalized} is not under {root}")
 
     current = root
     for segment in suffix_parts:
         if len(segment) > _MAX_SEGMENT_LEN:
-            return SafeResolveError(
-                f"path segment exceeds {_MAX_SEGMENT_LEN} chars: {segment!r}"
-            )
+            return SafeResolveError(f"path segment exceeds {_MAX_SEGMENT_LEN} chars: {segment!r}")
 
         candidate = current / segment
 
@@ -67,19 +64,14 @@ def safe_resolve(path: str | Path, root: str | Path) -> Path | SafeResolveError:
         # If the candidate exists and is a symlink, the resolved path must
         # still be under root.  For non-existing trailing segments we just
         # keep going (the parent must be under root though).
-        if resolved.exists() or candidate.is_symlink():
-            if not _is_under(resolved, root):
-                return SafeResolveError(
-                    f"path escapes root: {resolved} is not under {root}"
-                )
+        if (resolved.exists() or candidate.is_symlink()) and not _is_under(resolved, root):
+            return SafeResolveError(f"path escapes root: {resolved} is not under {root}")
 
         current = resolved
 
     # Final check on the fully resolved path.
     if not _is_under(current, root):
-        return SafeResolveError(
-            f"path escapes root: {current} is not under {root}"
-        )
+        return SafeResolveError(f"path escapes root: {current} is not under {root}")
 
     return current
 

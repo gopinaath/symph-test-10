@@ -45,7 +45,9 @@ class MockSnapshot:
     running: dict = field(default_factory=dict)
     retry_queue: dict = field(default_factory=dict)
     completed: set = field(default_factory=set)
-    codex_totals: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0})
+    codex_totals: dict = field(
+        default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0}
+    )
     codex_rate_limits: dict = None
     poll_countdown_ms: int = 25000
     poll_checking: bool = False
@@ -72,9 +74,11 @@ class TestAPI:
         assert resp.json()["status"] == "ok"
 
     def test_state_returns_snapshot(self):
-        orch = MockOrchestrator(MockSnapshot(
-            running={"issue-1": MockRunningEntry()},
-        ))
+        orch = MockOrchestrator(
+            MockSnapshot(
+                running={"issue-1": MockRunningEntry()},
+            )
+        )
         app = create_app(orchestrator=orch)
         client = TestClient(app)
         resp = client.get("/api/v1/state")
@@ -91,9 +95,11 @@ class TestAPI:
         assert resp.status_code == 503
 
     def test_get_issue_found(self):
-        orch = MockOrchestrator(MockSnapshot(
-            running={"issue-1": MockRunningEntry()},
-        ))
+        orch = MockOrchestrator(
+            MockSnapshot(
+                running={"issue-1": MockRunningEntry()},
+            )
+        )
         app = create_app(orchestrator=orch)
         client = TestClient(app)
         resp = client.get("/api/v1/TEST-1")
@@ -108,9 +114,11 @@ class TestAPI:
         assert resp.status_code == 404
 
     def test_get_issue_from_retry_queue(self):
-        orch = MockOrchestrator(MockSnapshot(
-            retry_queue={"issue-1": MockRetryEntry()},
-        ))
+        orch = MockOrchestrator(
+            MockSnapshot(
+                retry_queue={"issue-1": MockRetryEntry()},
+            )
+        )
         app = create_app(orchestrator=orch)
         client = TestClient(app)
         resp = client.get("/api/v1/TEST-1")

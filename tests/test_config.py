@@ -184,9 +184,8 @@ class TestEnvVarResolution:
     def test_missing_env_var_raises(self) -> None:
         env = os.environ.copy()
         env.pop("NONEXISTENT_VAR_XYZ", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            with pytest.raises(ValidationError, match="NONEXISTENT_VAR_XYZ"):
-                TrackerConfig(api_key="$NONEXISTENT_VAR_XYZ")
+        with mock.patch.dict(os.environ, env, clear=True), pytest.raises(ValidationError, match="NONEXISTENT_VAR_XYZ"):
+            TrackerConfig(api_key="$NONEXISTENT_VAR_XYZ")
 
     def test_non_env_string_passes_through(self) -> None:
         t = TrackerConfig(api_key="literal-key")
@@ -223,15 +222,11 @@ class TestPerStateConcurrency:
 
 class TestStateNormalization:
     def test_active_states_lowercased(self) -> None:
-        cfg = Config.from_yaml(
-            {"tracker": {"active_states": ["TODO", "In Progress"]}}
-        )
+        cfg = Config.from_yaml({"tracker": {"active_states": ["TODO", "In Progress"]}})
         assert cfg.tracker.active_states == ["todo", "in progress"]
 
     def test_terminal_states_lowercased(self) -> None:
-        cfg = Config.from_yaml(
-            {"tracker": {"terminal_states": ["CLOSED", "Done"]}}
-        )
+        cfg = Config.from_yaml({"tracker": {"terminal_states": ["CLOSED", "Done"]}})
         assert cfg.tracker.terminal_states == ["closed", "done"]
 
     def test_per_state_keys_lowercased(self) -> None:

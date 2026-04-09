@@ -47,10 +47,7 @@ class Workflow:
             if parsed is None:
                 parsed = {}
             if not isinstance(parsed, dict):
-                raise ValueError(
-                    f"YAML front matter in {path} must be a mapping, "
-                    f"got {type(parsed).__name__}"
-                )
+                raise ValueError(f"YAML front matter in {path} must be a mapping, got {type(parsed).__name__}")
             config = Config.from_yaml(parsed)
         else:
             config = Config()
@@ -91,10 +88,7 @@ def _split_front_matter(text: str) -> tuple[str | None, str]:
     rest = body_after_opening[close_pos + 4 :]  # skip "\n---"
     # Skip remainder of the closing --- line
     nl = rest.find("\n")
-    if nl == -1:
-        prompt = ""
-    else:
-        prompt = rest[nl + 1 :]
+    prompt = "" if nl == -1 else rest[nl + 1 :]
 
     return yaml_str, prompt
 
@@ -120,12 +114,8 @@ class WorkflowStore:
     _workflow: Workflow | None = field(default=None, init=False, repr=False)
     _stamp: _FileStamp = field(default_factory=_FileStamp, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
-    _stop_event: threading.Event = field(
-        default_factory=threading.Event, init=False, repr=False
-    )
-    _poll_thread: threading.Thread | None = field(
-        default=None, init=False, repr=False
-    )
+    _stop_event: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _poll_thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _last_error: Exception | None = field(default=None, init=False, repr=False)
 
     # -- public API ----------------------------------------------------------
@@ -154,9 +144,7 @@ class WorkflowStore:
     def start_polling(self) -> None:
         """Begin background polling for file changes."""
         self._stop_event.clear()
-        self._poll_thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="workflow-poll"
-        )
+        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True, name="workflow-poll")
         self._poll_thread.start()
 
     def stop_polling(self) -> None:

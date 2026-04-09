@@ -24,9 +24,7 @@ class TestWorkflowParse:
 
     def test_front_matter_and_prompt(self, tmp_path) -> None:
         p = tmp_path / "WORKFLOW.md"
-        p.write_text(
-            "---\npolling:\n  interval_ms: 5000\n---\nHello {{ issue.title }}"
-        )
+        p.write_text("---\npolling:\n  interval_ms: 5000\n---\nHello {{ issue.title }}")
         wf = Workflow.parse(str(p))
         assert wf.config.polling.interval_ms == 5000
         assert "Hello" in wf.prompt_template

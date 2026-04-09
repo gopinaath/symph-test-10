@@ -77,10 +77,8 @@ async def _run_hook(
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
-            try:
+            with contextlib.suppress(Exception):
                 await proc.wait()
-            except Exception:
-                pass
             return HookError(
                 message=f"hook timed out after {timeout}s",
                 timed_out=True,

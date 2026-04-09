@@ -88,9 +88,7 @@ def build_prompt(
     try:
         template = env.from_string(template_source)
     except TemplateSyntaxError as exc:
-        raise PromptBuildError(
-            f"Template syntax error at line {exc.lineno}: {exc.message}"
-        ) from exc
+        raise PromptBuildError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
 
     normalised_issue = _normalize_issue(issue)
 

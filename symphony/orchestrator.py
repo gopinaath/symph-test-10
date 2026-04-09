@@ -63,8 +63,8 @@ class OrchestratorSnapshot:
     running: dict[str, RunningEntry]
     retry_queue: dict[str, RetryEntry]
     completed: set[str]
-    codex_totals: dict  # {input_tokens, output_tokens, total_tokens, seconds_running}
-    codex_rate_limits: dict | None
+    codex_totals: dict[str, Any]  # {input_tokens, output_tokens, total_tokens, seconds_running}
+    codex_rate_limits: dict[str, Any] | None
     poll_countdown_ms: int
     poll_checking: bool
 
@@ -80,7 +80,7 @@ class AgentResult:
     output_tokens: int = 0
     total_tokens: int = 0
     error: str | None = None
-    rate_limits: dict | None = None
+    rate_limits: dict[str, Any] | None = None
 
 
 # The runner receives (issue, workspace_path, worker_host) and returns an
@@ -101,30 +101,31 @@ AgentRunnerFactory = Callable[
 
 def _get_max_concurrent(config: Config) -> int:
     """Return the global agent concurrency limit."""
-    agent = config.agent
-    return getattr(agent, "max_concurrent_agents", None) or getattr(
-        agent, "max_concurrent", 5
-    )
+    return config.agent.max_concurrent_agents
 
 
 def _get_max_concurrent_by_state(config: Config) -> dict[str, int]:
     agent = config.agent
-    return getattr(agent, "max_concurrent_agents_by_state", None) or getattr(
-        agent, "max_concurrent_per_state", {}
-    ) or {}
+    result: dict[str, int] = (
+        getattr(agent, "max_concurrent_agents_by_state", None) or getattr(agent, "max_concurrent_per_state", {}) or {}
+    )
+    return result
 
 
 def _get_stall_timeout_ms(config: Config) -> int:
     """Return stall timeout in ms (may live on codex or agent section)."""
-    codex = getattr(config, "codex", None)
-    if codex and hasattr(codex, "stall_timeout_ms"):
-        return codex.stall_timeout_ms
+    codex = config.codex
+    stall: int = getattr(codex, "stall_timeout_ms", 0)
+    if stall:
+        return stall
     agent = config.agent
-    return getattr(agent, "stall_timeout_ms", 600_000)
+    result: int = getattr(agent, "stall_timeout_ms", 600_000)
+    return result
 
 
 def _get_max_retry_backoff_ms(config: Config) -> int:
-    return getattr(config.agent, "max_retry_backoff_ms", 320_000)
+    result: int = getattr(config.agent, "max_retry_backoff_ms", 320_000)
+    return result
 
 
 def _get_polling_interval_ms(config: Config) -> int:
@@ -132,11 +133,13 @@ def _get_polling_interval_ms(config: Config) -> int:
 
 
 def _get_ssh_hosts(config: Config) -> list[str]:
-    return getattr(config.worker, "ssh_hosts", []) or []
+    result: list[str] = getattr(config.worker, "ssh_hosts", []) or []
+    return result
 
 
 def _get_max_per_host(config: Config) -> int:
-    return getattr(config.worker, "max_concurrent_agents_per_host", 2)
+    result: int = getattr(config.worker, "max_concurrent_agents_per_host", 2)
+    return result
 
 
 def _get_worker_name(config: Config) -> str | None:
@@ -175,10 +178,10 @@ class Orchestrator:
             "total_tokens": 0,
             "seconds_running": 0.0,
         }
-        self._codex_rate_limits: dict | None = None
+        self._codex_rate_limits: dict[str, Any] | None = None
 
         # Polling bookkeeping
-        self._poll_task: asyncio.Task | None = None
+        self._poll_task: asyncio.Task[None] | None = None
         self._refresh_event = asyncio.Event()
         self._stop_event = asyncio.Event()
         self._poll_checking = False
@@ -186,7 +189,7 @@ class Orchestrator:
         self._started_at: float | None = None  # monotonic clock
 
         # Retry timer tasks keyed by issue identifier -> (token, Task)
-        self._retry_timers: dict[str, tuple[str, asyncio.Task]] = {}
+        self._retry_timers: dict[str, tuple[str, asyncio.Task[None]]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -256,9 +259,7 @@ class Orchestrator:
             if delay > 0:
                 self._refresh_event.clear()
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(
-                        self._refresh_event.wait(), timeout=delay
-                    )
+                    await asyncio.wait_for(self._refresh_event.wait(), timeout=delay)
 
             if self._stop_event.is_set():
                 break
@@ -332,9 +333,7 @@ class Orchestrator:
             return not issue.assigned_to_worker
 
         # Legacy model: ``assignee`` string compared against worker name
-        assignee = getattr(issue, "assignee", None) or getattr(
-            issue, "assignee_id", None
-        )
+        assignee: str | None = getattr(issue, "assignee", None) or getattr(issue, "assignee_id", None)
         if assignee is None:
             return False
         return assignee != worker_name
@@ -392,13 +391,14 @@ class Orchestrator:
                 attempt=attempt,
             )
 
-    def _schedule_continuation_retry(
-        self, issue: Issue, *, preferred_host: str | None = None
-    ) -> None:
+    def _schedule_continuation_retry(self, issue: Issue, *, preferred_host: str | None = None) -> None:
         """Schedule a ~1 s retry for an active issue (normal completion)."""
         due_at = datetime.now(timezone.utc) + timedelta(seconds=1)
         entry = RetryEntry(
-            issue=issue, attempt=0, due_at=due_at, preferred_host=preferred_host,
+            issue=issue,
+            attempt=0,
+            due_at=due_at,
+            preferred_host=preferred_host,
         )
         self._retry_queue[issue.identifier] = entry
         self._schedule_retry_timer(issue.identifier, entry.token, 1.0)
@@ -422,13 +422,9 @@ class Orchestrator:
             preferred_host=preferred_host,
         )
         self._retry_queue[issue.identifier] = entry
-        self._schedule_retry_timer(
-            issue.identifier, entry.token, backoff_ms / 1000.0
-        )
+        self._schedule_retry_timer(issue.identifier, entry.token, backoff_ms / 1000.0)
 
-    def _schedule_retry_timer(
-        self, identifier: str, token: str, delay_seconds: float
-    ) -> None:
+    def _schedule_retry_timer(self, identifier: str, token: str, delay_seconds: float) -> None:
         """Fire an asyncio timer that triggers a poll after *delay_seconds*."""
         if identifier in self._retry_timers:
             _old_token, old_task = self._retry_timers[identifier]
@@ -456,7 +452,7 @@ class Orchestrator:
         if not candidates:
             return
 
-        def sort_key(issue: Issue) -> tuple:
+        def sort_key(issue: Issue) -> tuple[int, datetime, str]:
             pri = issue.priority if issue.priority is not None else 5
             created = issue.created_at or datetime.min.replace(tzinfo=timezone.utc)
             return (pri, created, issue.identifier)
@@ -491,9 +487,7 @@ class Orchestrator:
         (disappeared or moved to terminal state).
         """
         # First check state is still valid
-        states = await self._tracker.fetch_issue_states_by_ids(
-            [issue.identifier]
-        )
+        states = await self._tracker.fetch_issue_states_by_ids([issue.identifier])
         current_state = states.get(issue.identifier)
         if current_state is None or self._tracker.is_terminal_state(current_state):
             return None
@@ -524,9 +518,7 @@ class Orchestrator:
             return False
 
         # Todo with a non-terminal blocker => skip
-        blockers = getattr(issue, "blocked_by", None) or getattr(
-            issue, "blockers", None
-        ) or []
+        blockers = getattr(issue, "blocked_by", None) or getattr(issue, "blockers", None) or []
         if issue.state == "Todo" and blockers:
             has_non_terminal = False
             for b in blockers:
@@ -548,9 +540,7 @@ class Orchestrator:
                 if not issue.assigned_to_worker:
                     return False
             else:
-                assignee = getattr(issue, "assignee", None) or getattr(
-                    issue, "assignee_id", None
-                )
+                assignee = getattr(issue, "assignee", None) or getattr(issue, "assignee_id", None)
                 if assignee and assignee != worker_name:
                     return False
 
@@ -568,8 +558,7 @@ class Orchestrator:
         if limit is None:
             return True
         count = sum(
-            1 for e in self._running.values()
-            if e.issue.state == state or e.issue.state.lower() == state.lower()
+            1 for e in self._running.values() if e.issue.state == state or e.issue.state.lower() == state.lower()
         )
         return count < limit
 
@@ -617,9 +606,7 @@ class Orchestrator:
         if hosts:
             worker_host = self._pick_host(preferred=preferred_host)
             if worker_host is None:
-                logger.warning(
-                    "no_worker_capacity: cannot dispatch %s", issue.identifier
-                )
+                logger.warning("no_worker_capacity: cannot dispatch %s", issue.identifier)
                 return
 
         ws_result = await self._workspace.create(issue.identifier)
@@ -633,9 +620,7 @@ class Orchestrator:
             )
             return
 
-        task = asyncio.create_task(
-            self._run_agent(issue, workspace_path, worker_host, attempt)
-        )
+        task = asyncio.create_task(self._run_agent(issue, workspace_path, worker_host, attempt))
 
         entry = RunningEntry(
             issue=issue,
@@ -662,9 +647,7 @@ class Orchestrator:
         identifier = issue.identifier
         result: AgentResult | None = None
         try:
-            result = await self._agent_runner_factory(
-                issue, workspace_path, worker_host
-            )
+            result = await self._agent_runner_factory(issue, workspace_path, worker_host)
         except asyncio.CancelledError:
             return
         except Exception as exc:
@@ -691,13 +674,9 @@ class Orchestrator:
             current_state = states.get(identifier)
             if current_state and self._tracker.is_active_state(current_state):
                 self._completed.discard(identifier)
-                self._schedule_continuation_retry(
-                    issue, preferred_host=worker_host
-                )
+                self._schedule_continuation_retry(issue, preferred_host=worker_host)
 
-    def _update_codex_totals(
-        self, entry: RunningEntry, result: AgentResult
-    ) -> None:
+    def _update_codex_totals(self, entry: RunningEntry, result: AgentResult) -> None:
         """Merge agent result into the running entry and global totals."""
         if result.session_id:
             entry.session_id = result.session_id

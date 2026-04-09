@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Forward-reference type stubs (real implementations live elsewhere)
 # ---------------------------------------------------------------------------
 
+
 class Issue(Protocol):  # symphony.models.Issue
     id: str
     title: str
@@ -43,6 +44,7 @@ class PromptBuilder(Protocol):  # symphony.prompt_builder.PromptBuilder
 # Update callback protocol
 # ---------------------------------------------------------------------------
 
+
 class RunUpdateCallback(Protocol):
     """Callback the orchestrator passes in to receive progress updates."""
 
@@ -57,6 +59,7 @@ class RunUpdateCallback(Protocol):
 # Errors
 # ---------------------------------------------------------------------------
 
+
 class WorkspacePrepareFailedError(Exception):
     """SSH or local workspace preparation failed."""
 
@@ -64,6 +67,7 @@ class WorkspacePrepareFailedError(Exception):
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AgentRunnerConfig:
@@ -74,6 +78,7 @@ class AgentRunnerConfig:
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RunResult:
@@ -86,6 +91,7 @@ class RunResult:
 # ---------------------------------------------------------------------------
 # Hook protocol
 # ---------------------------------------------------------------------------
+
 
 class RunHook(Protocol):
     async def before_run(self, issue: Any, workspace: Any) -> None: ...
@@ -104,6 +110,7 @@ class _NullHook:
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
+
 
 class AgentRunner:
     """Runs a single issue through one or more Codex turns."""

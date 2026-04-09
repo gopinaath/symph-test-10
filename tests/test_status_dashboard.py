@@ -6,29 +6,25 @@ Ported from the Elixir ``status_dashboard_snapshot_test.exs`` test suite.
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
-
 from symphony.models import Issue
 from symphony.observability import (
-    EVENT_MAP,
     TPSTracker,
+    format_timestamp,
     humanize_event,
     sparkline,
     strip_ansi,
-    format_timestamp,
 )
-from symphony.orchestrator import OrchestratorSnapshot, RunningEntry, RetryEntry
+from symphony.orchestrator import OrchestratorSnapshot, RetryEntry, RunningEntry
 from symphony.status_dashboard import StatusDashboard
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_issue(
     identifier: str = "PROJ-1",
@@ -44,7 +40,7 @@ def _make_issue(
         priority=2,
         state=state,
         branch_name="fix-the-bug",
-        url=f"https://github.com/org/repo/issues/1",
+        url="https://github.com/org/repo/issues/1",
         assignee_id=None,
     )
     defaults.update(kwargs)
@@ -334,9 +330,10 @@ class TestRollingTPS:
         tps = tracker.tps(base + 11.0)
         # Only samples within 5s window should be used
         assert tps > 0
-        # All samples older than 5s should be pruned
+        # Pruning happens inside record() based on the last recorded
+        # timestamp (base + 10), so samples older than base + 5 are gone.
         oldest = min(t for t, _ in tracker._samples)
-        assert oldest >= base + 6.0
+        assert oldest >= base + 5.0
 
 
 class TestFormatTimestamps:
@@ -415,9 +412,7 @@ class TestTerminalWidthExpansion:
                 # blank spacer line).
                 plain = _strip(line)
                 if plain.strip():
-                    assert len(plain) >= target_width, (
-                        f"Line too short ({len(plain)} < {target_width}): {plain!r}"
-                    )
+                    assert len(plain) >= target_width, f"Line too short ({len(plain)} < {target_width}): {plain!r}"
 
     def test_fallback_width_is_120(self):
         dash = StatusDashboard()
@@ -428,6 +423,7 @@ class TestTerminalWidthExpansion:
         # The fallback happens inside get_terminal_width; we can test the
         # method directly by monkey-patching os.get_terminal_size
         import os
+
         original = os.get_terminal_size
         try:
             os.get_terminal_size = lambda *a, **k: (_ for _ in ()).throw(OSError)
@@ -462,10 +458,7 @@ class TestHumanizeCodexEvents:
         assert len(expected) == 17, "expected exactly 17 event types"
         for event_type, expected_text in expected.items():
             result = humanize_event(event_type)
-            assert result == expected_text, (
-                f"humanize_event({event_type!r}) = {result!r}, "
-                f"expected {expected_text!r}"
-            )
+            assert result == expected_text, f"humanize_event({event_type!r}) = {result!r}, expected {expected_text!r}"
 
     def test_unknown_event_passthrough(self):
         assert humanize_event("custom/unknown/event") == "custom/unknown/event"

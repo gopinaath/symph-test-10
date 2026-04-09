@@ -38,14 +38,9 @@ class DynamicToolRegistry:
     def tool_specs(self) -> list[dict[str, Any]]:
         """Return the list of tool definitions suitable for ``dynamicTools`` in the
         ``thread/start`` payload."""
-        return [
-            {"name": name, "inputSchema": spec}
-            for name, spec in self._specs.items()
-        ]
+        return [{"name": name, "inputSchema": spec} for name, spec in self._specs.items()]
 
-    async def execute(
-        self, tool_name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Dispatch *tool_name* with *arguments*.
 
         Returns ``{success: bool, output: str}``.
@@ -56,10 +51,7 @@ class DynamicToolRegistry:
             supported = sorted(self._handlers)
             return {
                 "success": False,
-                "output": (
-                    f"Unsupported tool: {tool_name}. "
-                    f"Supported tools: {', '.join(supported)}"
-                ),
+                "output": (f"Unsupported tool: {tool_name}. Supported tools: {', '.join(supported)}"),
             }
         try:
             return await handler(arguments)
@@ -188,9 +180,7 @@ def default_registry(
     registry = DynamicToolRegistry()
 
     async def _gh_handler(args: dict[str, Any]) -> dict[str, Any]:
-        return await github_graphql_handler(
-            args, token=github_token, http_client=http_client
-        )
+        return await github_graphql_handler(args, token=github_token, http_client=http_client)
 
     registry.register("github_graphql", GITHUB_GRAPHQL_SPEC, _gh_handler)
     return registry

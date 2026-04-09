@@ -7,15 +7,12 @@ Covers:
 - Dashboard payload field verification
 """
 
-import asyncio
 import os
 import tempfile
 import textwrap
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,8 +20,7 @@ from fastapi.testclient import TestClient
 from symphony.api import create_app
 from symphony.models import Issue
 from symphony.tracker.memory import MemoryTracker
-from symphony.workflow import Workflow, WorkflowStore
-
+from symphony.workflow import WorkflowStore
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -101,16 +97,12 @@ class _MockRunningEntry:
     session_id: str = "sess-ext-1"
     turn_count: int = 3
     last_event: str = "tool_call"
-    last_event_at: datetime = field(
-        default_factory=lambda: datetime(2026, 4, 5, 10, 0, 0, tzinfo=timezone.utc)
-    )
-    started_at: datetime = field(
-        default_factory=lambda: datetime(2026, 4, 5, 9, 30, 0, tzinfo=timezone.utc)
-    )
+    last_event_at: datetime = field(default_factory=lambda: datetime(2026, 4, 5, 10, 0, 0, tzinfo=timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime(2026, 4, 5, 9, 30, 0, tzinfo=timezone.utc))
     input_tokens: int = 2000
     output_tokens: int = 800
     total_tokens: int = 2800
-    worker_host: Optional[str] = None
+    worker_host: str | None = None
     workspace_path: str = "/tmp/ext-test"
 
 
@@ -118,11 +110,9 @@ class _MockRunningEntry:
 class _MockRetryEntry:
     issue: _MockIssue = field(default_factory=_MockIssue)
     attempt: int = 2
-    due_at: datetime = field(
-        default_factory=lambda: datetime(2026, 4, 5, 10, 5, 0, tzinfo=timezone.utc)
-    )
+    due_at: datetime = field(default_factory=lambda: datetime(2026, 4, 5, 10, 5, 0, tzinfo=timezone.utc))
     error: str = "rate_limited"
-    preferred_host: Optional[str] = None
+    preferred_host: str | None = None
 
 
 @dataclass
@@ -138,7 +128,7 @@ class _MockSnapshot:
             "seconds_running": 120,
         }
     )
-    codex_rate_limits: Optional[dict] = None
+    codex_rate_limits: dict | None = None
     poll_countdown_ms: int = 20000
     poll_checking: bool = False
 
@@ -175,9 +165,7 @@ class TestWorkflowStoreLifecycle:
 
     def test_reloads_changes_on_file_modification(self):
         """WorkflowStore picks up changes when the file is modified."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
             tmp.flush()
             path = tmp.name
@@ -208,9 +196,7 @@ class TestWorkflowStoreLifecycle:
 
     def test_keeps_last_good_workflow_on_bad_yaml(self):
         """Broken YAML keeps the last successfully loaded workflow."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
             tmp.flush()
             path = tmp.name
@@ -241,9 +227,7 @@ class TestWorkflowStoreLifecycle:
 
     def test_falls_back_to_cached_when_store_is_stopped(self):
         """After stop_polling the cached workflow is still accessible."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
             tmp.flush()
             path = tmp.name
@@ -263,16 +247,12 @@ class TestWorkflowStoreLifecycle:
 
     def test_path_change_triggers_reload(self):
         """Swapping to a new path and re-init loads the new file."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp1:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp1:
             tmp1.write(VALID_WORKFLOW)
             tmp1.flush()
             path1 = tmp1.name
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp2:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp2:
             tmp2.write(UPDATED_WORKFLOW)
             tmp2.flush()
             path2 = tmp2.name
@@ -388,9 +368,7 @@ class TestRESTAPIResponses:
 
     def test_get_state_returns_full_snapshot(self):
         """GET /api/v1/state returns all expected top-level keys."""
-        orch = _MockOrchestrator(
-            _MockSnapshot(running={"issue-1": _MockRunningEntry()})
-        )
+        orch = _MockOrchestrator(_MockSnapshot(running={"issue-1": _MockRunningEntry()}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 
@@ -412,9 +390,7 @@ class TestRESTAPIResponses:
 
     def test_get_specific_issue_returns_entry(self):
         """GET /api/v1/<identifier> returns the running entry."""
-        orch = _MockOrchestrator(
-            _MockSnapshot(running={"issue-1": _MockRunningEntry()})
-        )
+        orch = _MockOrchestrator(_MockSnapshot(running={"issue-1": _MockRunningEntry()}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 
@@ -482,16 +458,8 @@ class TestRESTAPIResponses:
 
     def test_get_issue_from_retry_queue(self):
         """GET /api/v1/<identifier> finds issue in the retry queue."""
-        retry_issue = _MockIssue(
-            id="issue-r1", identifier="RETRY-1", title="Retry me", state="backoff"
-        )
-        orch = _MockOrchestrator(
-            _MockSnapshot(
-                retry_queue={
-                    "issue-r1": _MockRetryEntry(issue=retry_issue)
-                }
-            )
-        )
+        retry_issue = _MockIssue(id="issue-r1", identifier="RETRY-1", title="Retry me", state="backoff")
+        orch = _MockOrchestrator(_MockSnapshot(retry_queue={"issue-r1": _MockRetryEntry(issue=retry_issue)}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 
@@ -515,9 +483,7 @@ class TestDashboardPayload:
 
     def test_running_entry_has_dashboard_fields(self):
         """Running entry payload has all fields the dashboard needs."""
-        orch = _MockOrchestrator(
-            _MockSnapshot(running={"issue-1": _MockRunningEntry()})
-        )
+        orch = _MockOrchestrator(_MockSnapshot(running={"issue-1": _MockRunningEntry()}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 
@@ -544,9 +510,7 @@ class TestDashboardPayload:
 
     def test_retry_entry_has_dashboard_fields(self):
         """Retry entry payload has all fields the dashboard needs."""
-        orch = _MockOrchestrator(
-            _MockSnapshot(retry_queue={"issue-1": _MockRetryEntry()})
-        )
+        orch = _MockOrchestrator(_MockSnapshot(retry_queue={"issue-1": _MockRetryEntry()}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 
@@ -595,9 +559,7 @@ class TestDashboardPayload:
 
     def test_datetime_fields_are_iso_strings(self):
         """Datetime fields are serialized as ISO 8601 strings."""
-        orch = _MockOrchestrator(
-            _MockSnapshot(running={"issue-1": _MockRunningEntry()})
-        )
+        orch = _MockOrchestrator(_MockSnapshot(running={"issue-1": _MockRunningEntry()}))
         app = create_app(orchestrator=orch)
         client = TestClient(app)
 

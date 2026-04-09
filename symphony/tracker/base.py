@@ -21,9 +21,7 @@ class Tracker(ABC):
         ...
 
     @abstractmethod
-    async def fetch_issue_states_by_ids(
-        self, identifiers: list[str]
-    ) -> dict[str, str | None]:
+    async def fetch_issue_states_by_ids(self, identifiers: list[str]) -> dict[str, str | None]:
         """Return {identifier: current_state} for the given issue IDs.
 
         If an issue is not found, its value should be None.

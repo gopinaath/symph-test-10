@@ -84,12 +84,14 @@ class TestRemoteShellCommand:
 class TestLogFile:
     def test_default_log_file_uses_cwd(self):
         from symphony.log_file import default_log_file
+
         result = default_log_file()
         assert result.endswith(os.path.join("log", "symphony.log"))
         assert os.getcwd() in result
 
     def test_default_log_file_custom_root(self):
         from symphony.log_file import default_log_file
+
         result = default_log_file("/custom/root")
         assert result == "/custom/root/log/symphony.log"
 
@@ -97,22 +99,30 @@ class TestLogFile:
 class TestCLI:
     def test_missing_ack_flag_returns_error(self):
         import subprocess
+
         result = subprocess.run(
             ["python", "-m", "symphony.cli"],
-            capture_output=True, text=True, cwd="/home/jerry/dev/scratch/karpathy/symph-test-10",
+            capture_output=True,
+            text=True,
+            cwd="/home/jerry/dev/scratch/karpathy/symph-test-10",
         )
         assert result.returncode == 1
         assert "guardrails" in result.stderr.lower() or "guardrails" in result.stdout.lower()
 
     def test_missing_workflow_returns_error(self, tmp_path):
         import subprocess
+
         result = subprocess.run(
             [
-                "python", "-m", "symphony.cli",
+                "python",
+                "-m",
+                "symphony.cli",
                 "--i-understand-that-this-will-be-running-without-the-usual-guardrails",
                 str(tmp_path / "nonexistent.md"),
             ],
-            capture_output=True, text=True, cwd="/home/jerry/dev/scratch/karpathy/symph-test-10",
+            capture_output=True,
+            text=True,
+            cwd="/home/jerry/dev/scratch/karpathy/symph-test-10",
         )
         assert result.returncode == 1
         assert "not found" in result.stderr.lower()

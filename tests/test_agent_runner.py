@@ -86,19 +86,19 @@ def _fake_app_server(
     server = AsyncMock(spec=AppServer)
     server.start = AsyncMock()
     server.start_thread = AsyncMock(return_value=session_id)
-    server.run_turn = AsyncMock(
-        return_value={"turn_id": "t-1", "usage": turn_usage or {"input_tokens": 5}}
-    )
+    server.run_turn = AsyncMock(return_value={"turn_id": "t-1", "usage": turn_usage or {"input_tokens": 5}})
     server.stop = AsyncMock()
     return server
 
 
 def _factory_returning(server: Any):
     """Return a factory callable that always yields *server*."""
+
     def factory(config=None, on_event=None):
         # Wire up on_event so the runner can push events through.
         server._on_event = on_event
         return server
+
     return factory
 
 
@@ -117,9 +117,7 @@ class TestAgentRunnerKeepsWorkspace:
         server = _fake_app_server()
         cfg = AgentRunnerConfig(max_turns=1)
 
-        runner = AgentRunner(
-            cfg, app_server_factory=_factory_returning(server)
-        )
+        runner = AgentRunner(cfg, app_server_factory=_factory_returning(server))
         result = await runner.run(issue, ws)
 
         assert isinstance(result, RunResult)
@@ -140,9 +138,7 @@ class TestAgentRunnerForwardsUpdates:
         server = _fake_app_server(session_id="sess-99")
         cfg = AgentRunnerConfig(max_turns=1)
 
-        runner = AgentRunner(
-            cfg, app_server_factory=_factory_returning(server)
-        )
+        runner = AgentRunner(cfg, app_server_factory=_factory_returning(server))
         await runner.run(issue, ws, callback=callback)
 
         assert "sess-99" in callback.sessions
@@ -203,9 +199,7 @@ class TestAgentRunnerMaxTurns:
         server = _fake_app_server()
         cfg = AgentRunnerConfig(max_turns=2)
 
-        runner = AgentRunner(
-            cfg, app_server_factory=_factory_returning(server)
-        )
+        runner = AgentRunner(cfg, app_server_factory=_factory_returning(server))
         result = await runner.run(issue, ws)
 
         assert result.turns_executed == 2
@@ -235,9 +229,7 @@ class TestAgentRunnerMaxTurns:
 
         server.run_turn = AsyncMock(side_effect=_run_turn_side_effect)
 
-        runner = AgentRunner(
-            cfg, app_server_factory=_factory_returning(server)
-        )
+        runner = AgentRunner(cfg, app_server_factory=_factory_returning(server))
         result = await runner.run(issue, ws)
 
         # Only turn 1 should have executed — turn 2 checks is_terminal() first.

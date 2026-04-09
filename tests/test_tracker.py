@@ -112,7 +112,7 @@ def _gh_issue(
         "number": number,
         "title": title,
         "state": state,
-        "labels": [{"name": l} for l in (labels or [])],
+        "labels": [{"name": lbl} for lbl in (labels or [])],
         "body": body,
         "assignee": {"login": assignee} if assignee else None,
         "html_url": f"https://github.com/o/r/issues/{number}",
@@ -156,17 +156,13 @@ class TestGitHubTrackerFetch:
 
     @pytest.mark.asyncio
     @respx.mock
-    async def test_fetch_issues_by_states_empty(
-        self, gh_tracker: GitHubTracker
-    ) -> None:
+    async def test_fetch_issues_by_states_empty(self, gh_tracker: GitHubTracker) -> None:
         result = await gh_tracker.fetch_issues_by_states([])
         assert result == []
 
     @pytest.mark.asyncio
     @respx.mock
-    async def test_extract_priority_and_blocked(
-        self, gh_tracker: GitHubTracker
-    ) -> None:
+    async def test_extract_priority_and_blocked(self, gh_tracker: GitHubTracker) -> None:
         respx.get(
             "https://api.github.com/repos/o/r/issues",
             params__contains={"labels": "open"},
@@ -195,9 +191,7 @@ class TestGitHubTrackerComment:
     @pytest.mark.asyncio
     @respx.mock
     async def test_create_comment(self, gh_tracker: GitHubTracker) -> None:
-        respx.post(
-            "https://api.github.com/repos/o/r/issues/10/comments"
-        ).respond(status_code=201)
+        respx.post("https://api.github.com/repos/o/r/issues/10/comments").respond(status_code=201)
 
         await gh_tracker.create_comment("10", "nice work")
 
@@ -206,9 +200,7 @@ class TestGitHubTrackerState:
     @pytest.mark.asyncio
     @respx.mock
     async def test_update_issue_state(self, gh_tracker: GitHubTracker) -> None:
-        respx.get("https://api.github.com/repos/o/r/issues/10").respond(
-            json=_gh_issue(10, labels=["open", "bug"])
-        )
+        respx.get("https://api.github.com/repos/o/r/issues/10").respond(json=_gh_issue(10, labels=["open", "bug"]))
         respx.patch("https://api.github.com/repos/o/r/issues/10").respond(
             status_code=200, json=_gh_issue(10, labels=["In Progress", "bug"])
         )
@@ -217,15 +209,9 @@ class TestGitHubTrackerState:
 
     @pytest.mark.asyncio
     @respx.mock
-    async def test_fetch_issue_states_by_ids(
-        self, gh_tracker: GitHubTracker
-    ) -> None:
-        respx.get("https://api.github.com/repos/o/r/issues/1").respond(
-            json=_gh_issue(1, labels=["open"])
-        )
-        respx.get("https://api.github.com/repos/o/r/issues/999").respond(
-            status_code=404
-        )
+    async def test_fetch_issue_states_by_ids(self, gh_tracker: GitHubTracker) -> None:
+        respx.get("https://api.github.com/repos/o/r/issues/1").respond(json=_gh_issue(1, labels=["open"]))
+        respx.get("https://api.github.com/repos/o/r/issues/999").respond(status_code=404)
 
         states = await gh_tracker.fetch_issue_states_by_ids(["1", "999"])
         assert states["1"] == "open"

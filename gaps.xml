@@ -50,7 +50,7 @@
   <!-- ================================================================== -->
   <category name="missing-tests">
 
-    <gap id="TEST-001" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="TEST-001" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Terminal status dashboard golden snapshot tests</title>
       <description>
         Port status_dashboard_snapshot_test.exs: idle dashboard, idle with URL,
@@ -161,7 +161,7 @@
   <!-- ================================================================== -->
   <category name="missing-implementation">
 
-    <gap id="IMPL-001" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="IMPL-001" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Terminal status dashboard renderer</title>
       <description>
         Implement the full ANSI terminal UI renderer equivalent to Elixir
@@ -222,7 +222,7 @@
   <!-- ================================================================== -->
   <category name="code-quality">
 
-    <gap id="QUAL-001" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="QUAL-001" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Run mypy strict mode and fix type errors</title>
       <description>
         Run mypy with strict mode across the entire symphony/ package. Fix
@@ -233,7 +233,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="QUAL-002" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="QUAL-002" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Run ruff linter and fix all warnings</title>
       <description>
         Add ruff configuration, run across entire codebase, fix all warnings.

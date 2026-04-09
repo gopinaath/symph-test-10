@@ -80,7 +80,7 @@ class TestGithubGraphql:
             )
         )
         result = await github_graphql_handler(
-            {"query": "{ repository(owner:\"o\", name:\"r\") { name } }"},
+            {"query": '{ repository(owner:"o", name:"r") { name } }'},
             token="fake-token",
         )
         assert result["success"] is True
@@ -100,9 +100,7 @@ class TestGithubGraphql:
                 json={"errors": [{"message": "Field not found"}]},
             )
         )
-        result = await github_graphql_handler(
-            {"query": "{ bad }"}, token="fake-token"
-        )
+        result = await github_graphql_handler({"query": "{ bad }"}, token="fake-token")
         assert result["success"] is False
         assert "Field not found" in result["output"]
 
@@ -115,7 +113,8 @@ class TestGithubGraphql:
     @pytest.mark.asyncio
     async def test_github_graphql_rejects_invalid_argument_types(self):
         result = await github_graphql_handler(
-            {"query": 42}, token="fake-token"  # type: ignore[arg-type]
+            {"query": 42},
+            token="fake-token",  # type: ignore[arg-type]
         )
         assert result["success"] is False
         assert "Invalid argument type for query" in result["output"]
@@ -130,11 +129,7 @@ class TestGithubGraphql:
     @pytest.mark.asyncio
     @respx.mock
     async def test_github_graphql_formats_transport_failures(self):
-        respx.post(GITHUB_GRAPHQL_URL).mock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
-        result = await github_graphql_handler(
-            {"query": "{ viewer { login } }"}, token="fake-token"
-        )
+        respx.post(GITHUB_GRAPHQL_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
+        result = await github_graphql_handler({"query": "{ viewer { login } }"}, token="fake-token")
         assert result["success"] is False
         assert "Transport failure" in result["output"]

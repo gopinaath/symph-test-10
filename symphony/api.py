@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from symphony.observability import PubSub
-from symphony.orchestrator import Orchestrator, OrchestratorSnapshot, RunningEntry, RetryEntry
+from symphony.orchestrator import Orchestrator, OrchestratorSnapshot, RetryEntry, RunningEntry
 
 
 def create_app(
@@ -83,14 +83,8 @@ def create_app(
 def _serialize_snapshot(snapshot: OrchestratorSnapshot) -> dict[str, Any]:
     """Serialize an OrchestratorSnapshot to JSON-safe dict."""
     return {
-        "running": {
-            k: _serialize_running_entry(v)
-            for k, v in snapshot.running.items()
-        },
-        "retry_queue": {
-            k: _serialize_retry_entry(v)
-            for k, v in snapshot.retry_queue.items()
-        },
+        "running": {k: _serialize_running_entry(v) for k, v in snapshot.running.items()},
+        "retry_queue": {k: _serialize_retry_entry(v) for k, v in snapshot.retry_queue.items()},
         "completed_count": len(snapshot.completed),
         "codex_totals": snapshot.codex_totals,
         "codex_rate_limits": snapshot.codex_rate_limits,

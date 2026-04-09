@@ -771,9 +771,7 @@ class TestSnapshot:
         )
         ws = StubWorkspace()
         rate_limits = {"requests_remaining": 42, "reset_at": "2025-01-01T00:00:00Z"}
-        runner = _make_runner(
-            result=AgentResult(rate_limits=rate_limits)
-        )
+        runner = _make_runner(result=AgentResult(rate_limits=rate_limits))
         orch = Orchestrator(_make_config(), tracker, ws, runner)
 
         await orch._dispatch_issue(_make_issue("ISS-1", state="InProgress"))
@@ -963,10 +961,7 @@ class TestIntegration:
 
     async def test_global_capacity_limits_dispatch(self) -> None:
         """When max_concurrent is reached, no more issues are dispatched."""
-        issues = [
-            _make_issue(f"ISS-{i}", state="Todo")
-            for i in range(5)
-        ]
+        issues = [_make_issue(f"ISS-{i}", state="Todo") for i in range(5)]
         tracker = MemoryTracker(issues=issues)
         ws = StubWorkspace()
 
@@ -1010,9 +1005,7 @@ class TestIntegration:
         await _run_orchestrator_cycle(orch)
         await asyncio.sleep(0.05)
 
-        todo_running = sum(
-            1 for e in orch.running.values() if e.issue.state == "Todo"
-        )
+        todo_running = sum(1 for e in orch.running.values() if e.issue.state == "Todo")
         assert todo_running == 1
         assert len(orch.running) == 2  # 1 Todo + 1 InProgress
 
