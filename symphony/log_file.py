@@ -4,22 +4,21 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
 
 
-def default_log_file(root: Optional[str] = None) -> str:
+def default_log_file(root: str | None = None) -> str:
     """Return the default log file path."""
     base = root or os.getcwd()
     return os.path.join(base, "log", "symphony.log")
 
 
 def configure_logging(
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
     level: int = logging.INFO,
     console: bool = True,
-):
+) -> logging.Logger:
     """Configure rotating file logger.
 
     Args:

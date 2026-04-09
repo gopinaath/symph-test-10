@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable, Protocol
+from typing import Any, Protocol
 
-from symphony.codex.app_server import AppServer, AppServerConfig, AppServerError
+from symphony.codex.app_server import AppServer, AppServerConfig
 
 logger = logging.getLogger(__name__)
 

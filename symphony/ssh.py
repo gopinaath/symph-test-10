@@ -2,18 +2,15 @@
 
 import asyncio
 import os
-import re
-import shlex
 import shutil
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class SSHTarget:
-    user: Optional[str]
+    user: str | None
     host: str
-    port: Optional[int]
+    port: int | None
 
 
 def parse_ssh_target(target: str) -> SSHTarget:
@@ -60,7 +57,7 @@ def parse_ssh_target(target: str) -> SSHTarget:
 def build_ssh_command(
     target: str,
     remote_command: str,
-    ssh_config: Optional[str] = None,
+    ssh_config: str | None = None,
     allocate_tty: bool = False,
 ) -> list[str]:
     """Build an SSH command list."""
@@ -101,8 +98,8 @@ def remote_shell_command(command: str) -> str:
 async def ssh_run(
     target: str,
     command: str,
-    timeout: Optional[float] = None,
-    ssh_config: Optional[str] = None,
+    timeout: float | None = None,
+    ssh_config: str | None = None,
 ) -> tuple[int, str, str]:
     """Run a command over SSH and return (returncode, stdout, stderr)."""
     cmd = build_ssh_command(target, command, ssh_config=ssh_config)

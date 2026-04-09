@@ -10,7 +10,6 @@ from typing import Any
 
 from jinja2 import Environment, StrictUndefined, TemplateSyntaxError, UndefinedError
 
-
 # ---------------------------------------------------------------------------
 # Default template used when the workflow prompt body is blank
 # ---------------------------------------------------------------------------
@@ -44,7 +43,7 @@ def _normalize_value(value: Any) -> Any:
     return value
 
 
-def _normalize_issue(issue: dict) -> dict:
+def _normalize_issue(issue: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *issue* with all nested date-like values serialised."""
     return {k: _normalize_value(v) for k, v in issue.items()}
 
@@ -60,7 +59,7 @@ class PromptBuildError(Exception):
 
 def build_prompt(
     template_source: str,
-    issue: dict,
+    issue: dict[str, Any],
     attempt: int = 1,
 ) -> str:
     """Render the prompt for a given *issue* and *attempt*.

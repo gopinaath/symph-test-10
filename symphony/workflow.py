@@ -8,14 +8,11 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import yaml
 
 from symphony.config import Config
-
 
 # ---------------------------------------------------------------------------
 # Workflow
@@ -30,7 +27,7 @@ class Workflow:
     prompt_template: str
 
     @classmethod
-    def parse(cls, path: str) -> "Workflow":
+    def parse(cls, path: str) -> Workflow:
         """Parse a workflow file at *path*.
 
         The file may contain:
@@ -64,11 +61,11 @@ class Workflow:
 def _read_file(path: str) -> str:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Workflow file not found: {path}")
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return fh.read()
 
 
-def _split_front_matter(text: str) -> tuple[Optional[str], str]:
+def _split_front_matter(text: str) -> tuple[str | None, str]:
     """Return ``(yaml_str | None, prompt_body)``."""
     stripped = text.lstrip("\n")
     if not stripped.startswith("---"):
@@ -120,16 +117,16 @@ class WorkflowStore:
     path: str
     poll_interval: float = 1.0  # seconds
 
-    _workflow: Optional[Workflow] = field(default=None, init=False, repr=False)
+    _workflow: Workflow | None = field(default=None, init=False, repr=False)
     _stamp: _FileStamp = field(default_factory=_FileStamp, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _stop_event: threading.Event = field(
         default_factory=threading.Event, init=False, repr=False
     )
-    _poll_thread: Optional[threading.Thread] = field(
+    _poll_thread: threading.Thread | None = field(
         default=None, init=False, repr=False
     )
-    _last_error: Optional[Exception] = field(default=None, init=False, repr=False)
+    _last_error: Exception | None = field(default=None, init=False, repr=False)
 
     # -- public API ----------------------------------------------------------
 
@@ -145,12 +142,12 @@ class WorkflowStore:
         return wf
 
     @property
-    def workflow(self) -> Optional[Workflow]:
+    def workflow(self) -> Workflow | None:
         with self._lock:
             return self._workflow
 
     @property
-    def last_error(self) -> Optional[Exception]:
+    def last_error(self) -> Exception | None:
         with self._lock:
             return self._last_error
 

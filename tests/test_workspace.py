@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
-import shutil
 from pathlib import Path
 
 import pytest
 
 from symphony.workspace import Workspace, WorkspaceConfig, WorkspaceError
-
 
 # ---------------------------------------------------------------------------
 # helpers

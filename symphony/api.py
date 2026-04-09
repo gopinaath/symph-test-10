@@ -1,14 +1,20 @@
 """FastAPI REST API for the Symphony dashboard and external integrations."""
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+from symphony.observability import PubSub
+from symphony.orchestrator import Orchestrator, OrchestratorSnapshot, RunningEntry, RetryEntry
 
 
-def create_app(orchestrator=None, pubsub=None) -> FastAPI:
+def create_app(
+    orchestrator: Orchestrator | None = None,
+    pubsub: PubSub | None = None,
+) -> FastAPI:
     """Create the FastAPI app with orchestrator dependency."""
 
     app = FastAPI(title="Symphony", version="0.1.0")
@@ -24,57 +30,57 @@ def create_app(orchestrator=None, pubsub=None) -> FastAPI:
     app.state.pubsub = pubsub
 
     @app.get("/api/v1/state")
-    async def get_state():
+    async def get_state() -> dict[str, Any]:
         """Get full orchestrator state snapshot."""
-        orch = app.state.orchestrator
+        orch: Orchestrator | None = app.state.orchestrator
         if orch is None:
             raise HTTPException(status_code=503, detail="Orchestrator unavailable")
         try:
             snapshot = orch.snapshot()
-        except Exception:
-            raise HTTPException(status_code=503, detail="Snapshot unavailable")
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Snapshot unavailable") from exc
         return _serialize_snapshot(snapshot)
 
     @app.get("/api/v1/{issue_identifier}")
-    async def get_issue(issue_identifier: str):
+    async def get_issue(issue_identifier: str) -> dict[str, Any]:
         """Get details for a specific running issue."""
-        orch = app.state.orchestrator
+        orch: Orchestrator | None = app.state.orchestrator
         if orch is None:
             raise HTTPException(status_code=503, detail="Orchestrator unavailable")
         try:
             snapshot = orch.snapshot()
-        except Exception:
-            raise HTTPException(status_code=503, detail="Snapshot unavailable")
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Snapshot unavailable") from exc
 
         # Search running entries
-        for issue_id, entry in snapshot.running.items():
+        for _issue_id, entry in snapshot.running.items():
             if entry.issue.identifier == issue_identifier:
                 return _serialize_running_entry(entry)
 
         # Search retry queue
-        for issue_id, retry in snapshot.retry_queue.items():
+        for _issue_id, retry in snapshot.retry_queue.items():
             if retry.issue.identifier == issue_identifier:
                 return _serialize_retry_entry(retry)
 
         raise HTTPException(status_code=404, detail=f"Issue {issue_identifier} not found")
 
     @app.post("/api/v1/refresh")
-    async def refresh():
+    async def refresh() -> dict[str, str]:
         """Trigger an immediate poll cycle."""
-        orch = app.state.orchestrator
+        orch: Orchestrator | None = app.state.orchestrator
         if orch is None:
             raise HTTPException(status_code=503, detail="Orchestrator unavailable")
         orch.request_refresh()
         return {"status": "refresh_requested"}
 
     @app.get("/health")
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     return app
 
 
-def _serialize_snapshot(snapshot) -> dict:
+def _serialize_snapshot(snapshot: OrchestratorSnapshot) -> dict[str, Any]:
     """Serialize an OrchestratorSnapshot to JSON-safe dict."""
     return {
         "running": {
@@ -93,7 +99,7 @@ def _serialize_snapshot(snapshot) -> dict:
     }
 
 
-def _serialize_running_entry(entry) -> dict:
+def _serialize_running_entry(entry: RunningEntry) -> dict[str, Any]:
     return {
         "issue_id": entry.issue.id,
         "identifier": entry.issue.identifier,
@@ -112,7 +118,7 @@ def _serialize_running_entry(entry) -> dict:
     }
 
 
-def _serialize_retry_entry(entry) -> dict:
+def _serialize_retry_entry(entry: RetryEntry) -> dict[str, Any]:
     return {
         "issue_id": entry.issue.id,
         "identifier": entry.issue.identifier,

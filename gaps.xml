@@ -63,7 +63,7 @@
       <depends-on>IMPL-001</depends-on>
     </gap>
 
-    <gap id="TEST-002" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="TEST-002" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Extensions integration tests</title>
       <description>
         Port extensions_test.exs: workflow store lifecycle (hot-reload, broken

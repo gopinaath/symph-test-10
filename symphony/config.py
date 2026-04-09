@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -42,10 +42,10 @@ def _normalize_states(states: list[str]) -> list[str]:
 
 class TrackerConfig(BaseModel):
     kind: str = "github"
-    endpoint: Optional[str] = None
-    api_key: Optional[str] = None
-    project_slug: Optional[str] = None
-    assignee: Optional[str] = None
+    endpoint: str | None = None
+    api_key: str | None = None
+    project_slug: str | None = None
+    assignee: str | None = None
     active_states: list[str] = Field(default_factory=lambda: ["todo", "in progress"])
     terminal_states: list[str] = Field(
         default_factory=lambda: [
@@ -145,10 +145,10 @@ class CodexConfig(BaseModel):
 
 
 class HooksConfig(BaseModel):
-    after_create: Optional[str] = None
-    before_run: Optional[str] = None
-    after_run: Optional[str] = None
-    before_remove: Optional[str] = None
+    after_create: str | None = None
+    before_run: str | None = None
+    after_run: str | None = None
+    before_remove: str | None = None
     timeout_ms: int = 60000
 
 
@@ -159,7 +159,7 @@ class ObservabilityConfig(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    port: Optional[int] = None
+    port: int | None = None
     host: str = "127.0.0.1"
 
 
@@ -184,7 +184,7 @@ class Config(BaseModel):
     # -- convenience ---------------------------------------------------------
 
     @classmethod
-    def from_yaml(cls, data: dict) -> "Config":
+    def from_yaml(cls, data: dict[str, Any]) -> Config:
         """Build a ``Config`` from a parsed YAML dict (front matter)."""
         if not isinstance(data, dict):
             raise TypeError(
@@ -193,7 +193,7 @@ class Config(BaseModel):
         return cls.model_validate(data)
 
     @model_validator(mode="after")
-    def _cross_validate(self) -> "Config":
+    def _cross_validate(self) -> Config:
         # Ensure terminal and active states don't overlap.
         overlap = set(self.tracker.active_states) & set(self.tracker.terminal_states)
         if overlap:

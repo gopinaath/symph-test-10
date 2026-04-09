@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -17,10 +16,8 @@ from symphony.codex.app_server import (
     AppServerConfig,
     AppServerError,
     InputRequired,
-    TurnFailed,
 )
 from symphony.codex.dynamic_tool import DynamicToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers

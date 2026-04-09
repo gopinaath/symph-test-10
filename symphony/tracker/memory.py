@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from typing import Awaitable, Callable, Optional
 
 from symphony.models import Issue
 from symphony.tracker.base import Tracker
@@ -17,12 +17,12 @@ class MemoryTracker(Tracker):
 
     def __init__(
         self,
-        issues: Optional[list[Issue]] = None,
-        active_states: Optional[set[str]] = None,
-        terminal_states: Optional[set[str]] = None,
-        candidate_states: Optional[set[str]] = None,
-        worker_name: Optional[str] = None,
-        on_state_change: Optional[StateChangeCallback] = None,
+        issues: list[Issue] | None = None,
+        active_states: set[str] | None = None,
+        terminal_states: set[str] | None = None,
+        candidate_states: set[str] | None = None,
+        worker_name: str | None = None,
+        on_state_change: StateChangeCallback | None = None,
     ) -> None:
         self.issues: dict[str, Issue] = {}
         self.comments: dict[str, list[str]] = {}
@@ -49,7 +49,7 @@ class MemoryTracker(Tracker):
         if identifier in self.issues:
             self.issues[identifier].state = state
 
-    def set_issue_assignee(self, identifier: str, assignee: Optional[str]) -> None:
+    def set_issue_assignee(self, identifier: str, assignee: str | None) -> None:
         if identifier in self.issues:
             issue = self.issues[identifier]
             if hasattr(issue, "assignee_id"):
@@ -81,8 +81,8 @@ class MemoryTracker(Tracker):
 
     async def fetch_issue_states_by_ids(
         self, identifiers: list[str]
-    ) -> dict[str, Optional[str]]:
-        result: dict[str, Optional[str]] = {}
+    ) -> dict[str, str | None]:
+        result: dict[str, str | None] = {}
         for ident in identifiers:
             issue = self.issues.get(ident)
             result[ident] = issue.state if issue else None

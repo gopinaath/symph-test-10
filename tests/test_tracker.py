@@ -12,7 +12,6 @@ from symphony.models import Issue
 from symphony.tracker.github import GitHubTracker
 from symphony.tracker.memory import MemoryTracker
 
-
 # =========================================================================
 # MemoryTracker tests
 # =========================================================================

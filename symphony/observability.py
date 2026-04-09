@@ -1,41 +1,37 @@
 """Observability layer: PubSub for dashboard updates and terminal status rendering."""
 
 import asyncio
+import contextlib
 import re
-import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from datetime import datetime
+from typing import Any
 
 
 class PubSub:
     """Simple async pub/sub for dashboard updates."""
 
-    def __init__(self):
-        self._subscribers: list[asyncio.Queue] = []
+    def __init__(self) -> None:
+        self._subscribers: list[asyncio.Queue[Any]] = []
 
-    def subscribe(self) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue()
+    def subscribe(self) -> asyncio.Queue[Any]:
+        q: asyncio.Queue[Any] = asyncio.Queue()
         self._subscribers.append(q)
         return q
 
-    def unsubscribe(self, q: asyncio.Queue):
+    def unsubscribe(self, q: asyncio.Queue[Any]) -> None:
         self._subscribers = [s for s in self._subscribers if s is not q]
 
-    async def broadcast(self, message: Any):
+    async def broadcast(self, message: Any) -> None:
         for q in self._subscribers:
-            try:
+            with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(message)
-            except asyncio.QueueFull:
-                pass
 
-    def broadcast_sync(self, message: Any):
+    def broadcast_sync(self, message: Any) -> None:
         """Non-async broadcast for use from sync contexts."""
         for q in self._subscribers:
-            try:
+            with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(message)
-            except asyncio.QueueFull:
-                pass
 
 
 # ── ANSI helpers ──
@@ -63,7 +59,7 @@ class TPSTracker:
     _last_tps_at: float = 0.0
     _history: list[float] = field(default_factory=list)  # 10-minute graph at 1s buckets
 
-    def record(self, timestamp: float, total_tokens: int):
+    def record(self, timestamp: float, total_tokens: int) -> None:
         self._samples.append((timestamp, total_tokens))
         # prune older than 5s
         cutoff = timestamp - 5.0
@@ -111,7 +107,7 @@ EVENT_MAP = {
 }
 
 
-def humanize_event(event_type: str, payload: Optional[dict] = None) -> str:
+def humanize_event(event_type: str, payload: dict[str, Any] | None = None) -> str:
     base = EVENT_MAP.get(event_type, event_type)
     if payload:
         if event_type == "item/message/delta" and "content" in payload:

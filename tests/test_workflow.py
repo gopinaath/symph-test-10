@@ -8,7 +8,6 @@ import pytest
 
 from symphony.workflow import Workflow, WorkflowStore
 
-
 # ---------------------------------------------------------------------------
 # Basic Workflow.parse
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any
 
 
 @dataclass
@@ -26,23 +26,23 @@ class Issue:
     identifier: str
     title: str
     description: str
-    priority: Optional[int]  # 1-4, None = no priority (treated as 5)
+    priority: int | None  # 1-4, None = no priority (treated as 5)
     state: str
     branch_name: str
     url: str
-    assignee_id: Optional[str]
+    assignee_id: str | None
     blocked_by: list[BlockerInfo] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
     assigned_to_worker: bool = True
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict suitable for template rendering.
 
         DateTime values are converted to ISO 8601 strings.
         """
-        result: dict = {}
+        result: dict[str, Any] = {}
         for k, v in self.__dict__.items():
             if isinstance(v, datetime):
                 result[k] = v.isoformat()

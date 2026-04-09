@@ -20,7 +20,6 @@ from symphony.config import (
 )
 from symphony.workflow import Workflow
 
-
 # ---------------------------------------------------------------------------
 # Defaults and validation
 # ---------------------------------------------------------------------------

@@ -1,9 +1,10 @@
 """Tests for the REST API."""
 
-import pytest
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
+
 from symphony.api import create_app
 
 

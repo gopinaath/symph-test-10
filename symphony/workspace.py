@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from symphony.path_safety import SafeResolveError, safe_resolve
 
@@ -28,12 +28,12 @@ class WorkspaceConfig:
     """Configuration for workspace management."""
 
     root: str
-    after_create: Optional[str] = None
-    before_run: Optional[str] = None
-    after_run: Optional[str] = None
-    before_remove: Optional[str] = None
+    after_create: str | None = None
+    before_run: str | None = None
+    after_run: str | None = None
+    before_remove: str | None = None
     hook_timeout: float = _DEFAULT_HOOK_TIMEOUT
-    ssh_host: Optional[str] = None  # None means local
+    ssh_host: str | None = None  # None means local
 
 
 @dataclass
@@ -41,7 +41,7 @@ class HookError:
     """Describes a hook execution failure."""
 
     message: str
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
     timed_out: bool = False
 
 
@@ -51,12 +51,12 @@ def _sanitize(identifier: str) -> str:
 
 
 async def _run_hook(
-    command: Optional[str],
+    command: str | None,
     cwd: str,
     *,
     timeout: float = _DEFAULT_HOOK_TIMEOUT,
-    env_extra: Optional[dict[str, str]] = None,
-) -> Optional[HookError]:
+    env_extra: dict[str, str] | None = None,
+) -> HookError | None:
     """Run a shell hook command. Returns ``None`` on success or a :class:`HookError`."""
     if not command:
         return None
@@ -160,7 +160,7 @@ class Workspace:
     # remove
     # ------------------------------------------------------------------
 
-    async def remove(self, identifier: str) -> Optional[WorkspaceError]:
+    async def remove(self, identifier: str) -> WorkspaceError | None:
         """Remove the workspace for *identifier*.
 
         Runs ``before_remove`` hook first.  If the hook fails the removal
@@ -198,7 +198,7 @@ class Workspace:
     # hook runners
     # ------------------------------------------------------------------
 
-    async def run_before_run(self, identifier: str) -> Optional[HookError]:
+    async def run_before_run(self, identifier: str) -> HookError | None:
         ws = self.path_for(identifier)
         return await _run_hook(
             self.config.before_run,
@@ -207,7 +207,7 @@ class Workspace:
             env_extra={"WORKSPACE": str(ws), "IDENTIFIER": identifier},
         )
 
-    async def run_after_run(self, identifier: str) -> Optional[HookError]:
+    async def run_after_run(self, identifier: str) -> HookError | None:
         ws = self.path_for(identifier)
         return await _run_hook(
             self.config.after_run,

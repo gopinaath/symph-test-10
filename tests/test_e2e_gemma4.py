@@ -8,8 +8,9 @@ Skip with: pytest -m "not e2e"
 
 import json
 import os
-import pytest
+
 import httpx
+import pytest
 
 VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8002/v1")
 MODEL_ID = "google/gemma-4-31B-it"

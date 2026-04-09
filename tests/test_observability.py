@@ -1,12 +1,17 @@
 """Tests for the observability module — PubSub, ANSI stripping, TPS tracking, event humanization."""
 
-import asyncio
-import pytest
-from symphony.observability import (
-    PubSub, strip_ansi, sparkline, TPSTracker, humanize_event, format_timestamp,
-    EVENT_MAP,
-)
 from datetime import datetime, timezone
+
+import pytest
+
+from symphony.observability import (
+    PubSub,
+    TPSTracker,
+    format_timestamp,
+    humanize_event,
+    sparkline,
+    strip_ansi,
+)
 
 
 class TestPubSub:

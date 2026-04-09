@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,8 +14,7 @@ from symphony.agent_runner import (
     RunResult,
     WorkspacePrepareFailedError,
 )
-from symphony.codex.app_server import AppServer, AppServerConfig
-
+from symphony.codex.app_server import AppServer
 
 # ---------------------------------------------------------------------------
 # Fake collaborators

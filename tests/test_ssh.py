@@ -1,8 +1,10 @@
 """Tests for SSH utilities."""
 
 import os
+
 import pytest
-from symphony.ssh import parse_ssh_target, build_ssh_command, remote_shell_command, SSHTarget
+
+from symphony.ssh import SSHTarget, build_ssh_command, parse_ssh_target, remote_shell_command
 
 
 class TestParseSSHTarget:

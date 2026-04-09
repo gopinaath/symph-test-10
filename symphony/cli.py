@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import os
 import sys
-from pathlib import Path
 
 
 def main():
@@ -89,11 +88,11 @@ def main():
 
 async def _run(workflow_path: str, port_override: int | None = None):
     """Main async entry point."""
-    from symphony.config import Config
-    from symphony.workflow import Workflow
-    from symphony.orchestrator import Orchestrator
-    from symphony.observability import PubSub
     from symphony.api import create_app
+    from symphony.config import Config
+    from symphony.observability import PubSub
+    from symphony.orchestrator import Orchestrator
+    from symphony.workflow import Workflow
 
     # Load workflow
     workflow = Workflow.parse(workflow_path)

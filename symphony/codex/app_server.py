@@ -6,9 +6,10 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Awaitable
+from typing import Any
 
 from symphony.codex.dynamic_tool import DynamicToolRegistry, default_registry
 
@@ -226,7 +227,7 @@ class AppServer:
                 return msg
         raise AppServerError("Subprocess stdout closed before response received")
 
-    async def _read_messages(self):
+    async def _read_messages(self) -> AsyncIterator[dict[str, Any]]:
         """Yield parsed JSON messages, buffering partial lines."""
         assert self._proc and self._proc.stdout
         while True:

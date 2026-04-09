@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -25,9 +25,9 @@ class GitHubTracker(Tracker):
         owner: str,
         repo: str,
         token: str = "",
-        candidate_states: Optional[list[str]] = None,
-        state_labels: Optional[dict[str, str]] = None,
-        client: Optional[httpx.AsyncClient] = None,
+        candidate_states: list[str] | None = None,
+        state_labels: dict[str, str] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         self.owner = owner
         self.repo = repo
@@ -52,14 +52,14 @@ class GitHubTracker(Tracker):
     def _label_for_state(self, state: str) -> str:
         return self._state_labels.get(state, state)
 
-    def _state_for_label(self, label: str) -> Optional[str]:
+    def _state_for_label(self, label: str) -> str | None:
         for state, lbl in self._state_labels.items():
             if lbl == label:
                 return state
         return label
 
     @staticmethod
-    def _extract_priority(labels: list[str]) -> Optional[int]:
+    def _extract_priority(labels: list[str]) -> int | None:
         for lbl in labels:
             m = _PRIORITY_RE.match(lbl)
             if m:
@@ -107,7 +107,7 @@ class GitHubTracker(Tracker):
         )
 
     async def _paginated_get(
-        self, url: str, params: Optional[dict[str, Any]] = None
+        self, url: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         params = dict(params or {})
         params.setdefault("per_page", _PAGE_SIZE)
@@ -167,8 +167,8 @@ class GitHubTracker(Tracker):
 
     async def fetch_issue_states_by_ids(
         self, identifiers: list[str]
-    ) -> dict[str, Optional[str]]:
-        result: dict[str, Optional[str]] = {}
+    ) -> dict[str, str | None]:
+        result: dict[str, str | None] = {}
         for ident in identifiers:
             resp = await self._client.get(self._repo_url(f"/issues/{ident}"))
             if resp.status_code == 200:

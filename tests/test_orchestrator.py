@@ -8,22 +8,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
 from unittest.mock import AsyncMock
 
-import pytest
-
-from symphony.config import AgentConfig, Config, PollingConfig, WorkerConfig, CodexConfig
+from symphony.config import AgentConfig, CodexConfig, Config, PollingConfig, WorkerConfig
 from symphony.models import BlockerInfo, Issue
 from symphony.orchestrator import (
     AgentResult,
     Orchestrator,
-    OrchestratorSnapshot,
     RetryEntry,
-    RunningEntry,
 )
 from symphony.tracker.memory import MemoryTracker
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,11 +34,11 @@ def _make_issue(
     identifier: str = "ISS-1",
     title: str = "Test issue",
     state: str = "Todo",
-    priority: Optional[int] = None,
-    created_at: Optional[datetime] = None,
+    priority: int | None = None,
+    created_at: datetime | None = None,
     assigned_to_worker: bool = True,
-    assignee_id: Optional[str] = None,
-    blocked_by: Optional[list[BlockerInfo]] = None,
+    assignee_id: str | None = None,
+    blocked_by: list[BlockerInfo] | None = None,
 ) -> Issue:
     global _COUNTER
     _COUNTER += 1
@@ -69,10 +63,10 @@ def _make_config(
     polling_interval_ms: int = 60_000,
     stall_timeout_ms: int = 600_000,
     max_retry_backoff_ms: int = 320_000,
-    ssh_hosts: Optional[list[str]] = None,
+    ssh_hosts: list[str] | None = None,
     max_concurrent_agents_per_host: int = 2,
-    worker_name: Optional[str] = None,
-    max_concurrent_per_state: Optional[dict[str, int]] = None,
+    worker_name: str | None = None,
+    max_concurrent_per_state: dict[str, int] | None = None,
 ) -> Config:
     # Build the worker config; add ``name`` dynamically since the Pydantic
     # model may not have it yet.
@@ -114,8 +108,8 @@ class StubWorkspace:
 
 
 def _make_runner(
-    result: Optional[AgentResult] = None,
-    error: Optional[Exception] = None,
+    result: AgentResult | None = None,
+    error: Exception | None = None,
     hang: bool = False,
     delay: float = 0,
 ) -> AsyncMock:
@@ -123,7 +117,7 @@ def _make_runner(
     if result is None and error is None and not hang:
         result = AgentResult()
 
-    async def _run(issue: Issue, ws: Optional[str], host: Optional[str]) -> AgentResult:
+    async def _run(issue: Issue, ws: str | None, host: str | None) -> AgentResult:
         if hang:
             await asyncio.sleep(999_999)
         if delay:
@@ -598,7 +592,7 @@ class TestWorkerHostSelection:
         )
         ws = StubWorkspace()
 
-        hosts_used: list[Optional[str]] = []
+        hosts_used: list[str | None] = []
 
         async def _capturing_runner(issue, ws_path, host):
             hosts_used.append(host)
@@ -664,7 +658,7 @@ class TestWorkerHostSelection:
         )
         ws = StubWorkspace()
 
-        hosts_seen: list[Optional[str]] = []
+        hosts_seen: list[str | None] = []
 
         async def _capturing_runner(issue, ws_path, host):
             hosts_seen.append(host)

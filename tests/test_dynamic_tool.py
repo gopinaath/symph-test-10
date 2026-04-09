@@ -9,13 +9,10 @@ import pytest
 import respx
 
 from symphony.codex.dynamic_tool import (
-    GITHUB_GRAPHQL_SPEC,
     GITHUB_GRAPHQL_URL,
-    DynamicToolRegistry,
     default_registry,
     github_graphql_handler,
 )
-
 
 # ---------------------------------------------------------------------------
 # tool_specs

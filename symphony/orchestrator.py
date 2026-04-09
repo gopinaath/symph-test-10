@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 from symphony.config import Config
 from symphony.models import Issue
@@ -28,17 +30,17 @@ class RunningEntry:
     """Tracks a currently-executing agent task."""
 
     issue: Issue
-    task: asyncio.Task
+    task: asyncio.Task[None]
     started_at: datetime
-    session_id: Optional[str] = None
+    session_id: str | None = None
     turn_count: int = 0
-    last_event: Optional[str] = None
-    last_event_at: Optional[datetime] = None
+    last_event: str | None = None
+    last_event_at: datetime | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
-    worker_host: Optional[str] = None
-    workspace_path: Optional[str] = None
+    worker_host: str | None = None
+    workspace_path: str | None = None
     attempt: int = 0  # which retry attempt this dispatch originated from
 
 
@@ -49,8 +51,8 @@ class RetryEntry:
     issue: Issue
     attempt: int
     due_at: datetime
-    error: Optional[str] = None
-    preferred_host: Optional[str] = None
+    error: str | None = None
+    preferred_host: str | None = None
     token: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
@@ -62,7 +64,7 @@ class OrchestratorSnapshot:
     retry_queue: dict[str, RetryEntry]
     completed: set[str]
     codex_totals: dict  # {input_tokens, output_tokens, total_tokens, seconds_running}
-    codex_rate_limits: Optional[dict]
+    codex_rate_limits: dict | None
     poll_countdown_ms: int
     poll_checking: bool
 
@@ -71,20 +73,20 @@ class OrchestratorSnapshot:
 class AgentResult:
     """Result returned by an agent runner."""
 
-    session_id: Optional[str] = None
+    session_id: str | None = None
     turn_count: int = 0
-    last_event: Optional[str] = None
+    last_event: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
-    error: Optional[str] = None
-    rate_limits: Optional[dict] = None
+    error: str | None = None
+    rate_limits: dict | None = None
 
 
 # The runner receives (issue, workspace_path, worker_host) and returns an
 # ``AgentResult``.
 AgentRunnerFactory = Callable[
-    [Issue, Optional[str], Optional[str]],
+    [Issue, str | None, str | None],
     Coroutine[Any, Any, AgentResult],
 ]
 
@@ -137,7 +139,7 @@ def _get_max_per_host(config: Config) -> int:
     return getattr(config.worker, "max_concurrent_agents_per_host", 2)
 
 
-def _get_worker_name(config: Config) -> Optional[str]:
+def _get_worker_name(config: Config) -> str | None:
     return getattr(config.worker, "name", None)
 
 
@@ -173,15 +175,15 @@ class Orchestrator:
             "total_tokens": 0,
             "seconds_running": 0.0,
         }
-        self._codex_rate_limits: Optional[dict] = None
+        self._codex_rate_limits: dict | None = None
 
         # Polling bookkeeping
-        self._poll_task: Optional[asyncio.Task] = None
+        self._poll_task: asyncio.Task | None = None
         self._refresh_event = asyncio.Event()
         self._stop_event = asyncio.Event()
         self._poll_checking = False
-        self._next_poll_at: Optional[float] = None  # monotonic clock
-        self._started_at: Optional[float] = None  # monotonic clock
+        self._next_poll_at: float | None = None  # monotonic clock
+        self._started_at: float | None = None  # monotonic clock
 
         # Retry timer tasks keyed by issue identifier -> (token, Task)
         self._retry_timers: dict[str, tuple[str, asyncio.Task]] = {}
@@ -217,18 +219,13 @@ class Orchestrator:
 
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
-            except asyncio.CancelledError:
-                pass
 
     def snapshot(self) -> OrchestratorSnapshot:
         """Return a point-in-time snapshot of the orchestrator state."""
         now_mono = time.monotonic()
-        if self._next_poll_at is not None:
-            countdown_ms = max(0, int((self._next_poll_at - now_mono) * 1000))
-        else:
-            countdown_ms = 0
+        countdown_ms = max(0, int((self._next_poll_at - now_mono) * 1000)) if self._next_poll_at is not None else 0
 
         return OrchestratorSnapshot(
             running=dict(self._running),
@@ -254,19 +251,14 @@ class Orchestrator:
         interval_s = _get_polling_interval_ms(self._config) / 1000.0
         while not self._stop_event.is_set():
             now = time.monotonic()
-            if self._next_poll_at is not None:
-                delay = max(0.0, self._next_poll_at - now)
-            else:
-                delay = interval_s
+            delay = max(0.0, self._next_poll_at - now) if self._next_poll_at is not None else interval_s
 
             if delay > 0:
                 self._refresh_event.clear()
-                try:
+                with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(
                         self._refresh_event.wait(), timeout=delay
                     )
-                except asyncio.TimeoutError:
-                    pass
 
             if self._stop_event.is_set():
                 break
@@ -311,9 +303,7 @@ class Orchestrator:
                 await self._stop_agent(ident, clean_workspace=False)
             elif self._tracker.is_terminal_state(new_state):
                 await self._stop_agent(ident, clean_workspace=True)
-            elif not self._tracker.is_active_state(new_state):
-                await self._stop_agent(ident, clean_workspace=False)
-            elif self._is_reassigned(entry):
+            elif not self._tracker.is_active_state(new_state) or self._is_reassigned(entry):
                 await self._stop_agent(ident, clean_workspace=False)
             else:
                 # Still active — update cached state
@@ -366,10 +356,8 @@ class Orchestrator:
             return
 
         entry.task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await entry.task
-        except (asyncio.CancelledError, Exception):
-            pass
 
         if clean_workspace:
             try:
@@ -405,7 +393,7 @@ class Orchestrator:
             )
 
     def _schedule_continuation_retry(
-        self, issue: Issue, *, preferred_host: Optional[str] = None
+        self, issue: Issue, *, preferred_host: str | None = None
     ) -> None:
         """Schedule a ~1 s retry for an active issue (normal completion)."""
         due_at = datetime.now(timezone.utc) + timedelta(seconds=1)
@@ -419,8 +407,8 @@ class Orchestrator:
         self,
         issue: Issue,
         attempt: int,
-        error: Optional[str] = None,
-        preferred_host: Optional[str] = None,
+        error: str | None = None,
+        preferred_host: str | None = None,
     ) -> None:
         """Schedule a retry with exponential backoff on failure."""
         max_backoff_ms = _get_max_retry_backoff_ms(self._config)
@@ -496,7 +484,7 @@ class Orchestrator:
 
             await self._dispatch_issue(fresh)
 
-    async def _revalidate_issue(self, issue: Issue) -> Optional[Issue]:
+    async def _revalidate_issue(self, issue: Issue) -> Issue | None:
         """Re-fetch the latest issue data before dispatch.
 
         Returns the updated issue, or ``None`` if it should be skipped
@@ -585,7 +573,7 @@ class Orchestrator:
         )
         return count < limit
 
-    def _has_host_capacity(self, host: Optional[str] = None) -> bool:
+    def _has_host_capacity(self, host: str | None = None) -> bool:
         """True if at least one SSH host has capacity (or no hosts configured)."""
         hosts = _get_ssh_hosts(self._config)
         if not hosts:
@@ -595,7 +583,7 @@ class Orchestrator:
             return count < _get_max_per_host(self._config)
         return self._pick_host() is not None
 
-    def _pick_host(self, preferred: Optional[str] = None) -> Optional[str]:
+    def _pick_host(self, preferred: str | None = None) -> str | None:
         """Return the least-loaded SSH host with available capacity."""
         hosts = _get_ssh_hosts(self._config)
         if not hosts:
@@ -620,12 +608,12 @@ class Orchestrator:
         self,
         issue: Issue,
         *,
-        preferred_host: Optional[str] = None,
+        preferred_host: str | None = None,
         attempt: int = 0,
     ) -> None:
         """Create workspace and launch an agent task for *issue*."""
         hosts = _get_ssh_hosts(self._config)
-        worker_host: Optional[str] = None
+        worker_host: str | None = None
         if hosts:
             worker_host = self._pick_host(preferred=preferred_host)
             if worker_host is None:
@@ -666,13 +654,13 @@ class Orchestrator:
     async def _run_agent(
         self,
         issue: Issue,
-        workspace_path: Optional[str],
-        worker_host: Optional[str],
+        workspace_path: str | None,
+        worker_host: str | None,
         attempt: int,
     ) -> None:
         """Execute an agent runner and handle the outcome."""
         identifier = issue.identifier
-        result: Optional[AgentResult] = None
+        result: AgentResult | None = None
         try:
             result = await self._agent_runner_factory(
                 issue, workspace_path, worker_host

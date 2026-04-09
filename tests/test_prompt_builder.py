@@ -7,11 +7,9 @@ from datetime import datetime, timezone
 import pytest
 
 from symphony.prompt_builder import (
-    DEFAULT_TEMPLATE,
     PromptBuildError,
     build_prompt,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
