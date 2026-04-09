@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from symphony.config import AgentConfig, Config, PollingConfig, WorkerConfig
+from symphony.config import AgentConfig, Config, PollingConfig, WorkerConfig, CodexConfig
 from symphony.models import BlockerInfo, Issue
 from symphony.orchestrator import (
     AgentResult,
@@ -29,6 +29,9 @@ from symphony.tracker.memory import MemoryTracker
 # Helpers
 # ---------------------------------------------------------------------------
 
+_COUNTER = 0
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -39,17 +42,25 @@ def _make_issue(
     state: str = "Todo",
     priority: Optional[int] = None,
     created_at: Optional[datetime] = None,
-    assignee: Optional[str] = None,
-    blockers: Optional[list[BlockerInfo]] = None,
+    assigned_to_worker: bool = True,
+    assignee_id: Optional[str] = None,
+    blocked_by: Optional[list[BlockerInfo]] = None,
 ) -> Issue:
+    global _COUNTER
+    _COUNTER += 1
     return Issue(
+        id=f"id-{identifier}-{_COUNTER}",
         identifier=identifier,
         title=title,
-        state=state,
+        description="",
         priority=priority,
+        state=state,
+        branch_name=f"branch-{identifier}",
+        url=f"https://example.com/{identifier}",
+        assignee_id=assignee_id,
+        blocked_by=blocked_by or [],
+        assigned_to_worker=assigned_to_worker,
         created_at=created_at or _now(),
-        assignee=assignee,
-        blockers=blockers or [],
     )
 
 
@@ -63,24 +74,32 @@ def _make_config(
     worker_name: Optional[str] = None,
     max_concurrent_per_state: Optional[dict[str, int]] = None,
 ) -> Config:
+    # Build the worker config; add ``name`` dynamically since the Pydantic
+    # model may not have it yet.
+    worker = WorkerConfig(
+        ssh_hosts=ssh_hosts or [],
+        max_concurrent_agents_per_host=max_concurrent_agents_per_host,
+    )
+    # Attach worker name (the orchestrator reads it via getattr).
+    if worker_name is not None:
+        object.__setattr__(worker, "name", worker_name)
+
     return Config(
         polling=PollingConfig(interval_ms=polling_interval_ms),
         agent=AgentConfig(
-            max_concurrent=max_concurrent,
-            stall_timeout_ms=stall_timeout_ms,
+            max_concurrent_agents=max_concurrent,
             max_retry_backoff_ms=max_retry_backoff_ms,
-            max_concurrent_per_state=max_concurrent_per_state or {},
+            max_concurrent_agents_by_state=max_concurrent_per_state or {},
         ),
-        worker=WorkerConfig(
-            name=worker_name,
-            ssh_hosts=ssh_hosts or [],
-            max_concurrent_agents_per_host=max_concurrent_agents_per_host,
+        codex=CodexConfig(
+            stall_timeout_ms=stall_timeout_ms,
         ),
+        worker=worker,
     )
 
 
 class StubWorkspace:
-    """Minimal workspace stub for testing — no filesystem side-effects."""
+    """Minimal workspace stub for testing -- no filesystem side-effects."""
 
     def __init__(self) -> None:
         self.created: list[str] = []
@@ -100,13 +119,7 @@ def _make_runner(
     hang: bool = False,
     delay: float = 0,
 ) -> AsyncMock:
-    """Return an async mock agent runner factory.
-
-    ``result`` — the AgentResult to return on success.
-    ``error``  — raise this exception instead of returning.
-    ``hang``   — sleep forever (simulates a stalled agent).
-    ``delay``  — sleep this many seconds before returning.
-    """
+    """Return an async mock agent runner factory."""
     if result is None and error is None and not hang:
         result = AgentResult()
 
@@ -129,14 +142,6 @@ async def _run_orchestrator_cycle(orch: Orchestrator) -> None:
     await orch._poll_cycle()
 
 
-async def _start_and_cycle(orch: Orchestrator) -> None:
-    """Start the orchestrator, let the initial poll fire, then stop."""
-    await orch.start()
-    # Give the initial 100 ms timer + poll cycle time to run.
-    await asyncio.sleep(0.25)
-    await orch.stop()
-
-
 # ---------------------------------------------------------------------------
 # State reconciliation
 # ---------------------------------------------------------------------------
@@ -154,7 +159,7 @@ class TestReconciliation:
         runner = _make_runner()
         orch = Orchestrator(_make_config(), tracker, ws, runner)
 
-        # No running entries — reconcile should be a no-op.
+        # No running entries -- reconcile should be a no-op.
         await orch._reconcile()
 
         assert len(orch.running) == 0
@@ -239,33 +244,29 @@ class TestReconciliation:
         issue = _make_issue("ISS-1", state="InProgress")
         await orch._dispatch_issue(issue)
 
-        # The issue stays active but we want to verify the state object updates
-        # (it's already InProgress -> InProgress, but the key point is the entry
-        # remains).
+        # The issue stays active; verify the entry remains
         await orch._reconcile()
 
         assert "ISS-1" in orch.running
         assert orch.running["ISS-1"].issue.state == "InProgress"
 
     async def test_reconcile_stops_reassigned_issue(self) -> None:
-        """If a running issue is reassigned to another worker, the agent
-        is stopped without workspace cleanup."""
+        """If a running issue is reassigned away from our worker,
+        the agent is stopped without workspace cleanup."""
         tracker = MemoryTracker(
-            issues=[_make_issue("ISS-1", state="InProgress", assignee="worker-1")],
+            issues=[_make_issue("ISS-1", state="InProgress", assigned_to_worker=True)],
         )
         ws = StubWorkspace()
         runner = _make_runner(hang=True)
         config = _make_config(worker_name="worker-1")
         orch = Orchestrator(config, tracker, ws, runner)
 
-        issue = _make_issue("ISS-1", state="InProgress", assignee="worker-1")
+        issue = _make_issue("ISS-1", state="InProgress", assigned_to_worker=True)
         await orch._dispatch_issue(issue)
         assert "ISS-1" in orch.running
 
-        # Reassign to a different worker
-        tracker.set_issue_assignee("ISS-1", "worker-2")
-        # Also update the running entry's issue assignee to match the tracker
-        orch.running["ISS-1"].issue.assignee = "worker-2"
+        # Reassign away from this worker
+        orch.running["ISS-1"].issue.assigned_to_worker = False
 
         await orch._reconcile()
 
@@ -302,7 +303,7 @@ class TestRetryLogic:
         assert entry.attempt == 0
         # due_at should be ~1 second from now
         delta = (entry.due_at - _now()).total_seconds()
-        assert -0.5 <= delta <= 1.5  # within reasonable tolerance
+        assert -0.5 <= delta <= 1.5
 
     async def test_abnormal_exit_increments_retry_progressively(self) -> None:
         """Each abnormal exit bumps the retry attempt counter."""
@@ -311,11 +312,7 @@ class TestRetryLogic:
         )
         ws = StubWorkspace()
 
-        call_count = 0
-
         async def _failing_runner(issue, ws_path, host):
-            nonlocal call_count
-            call_count += 1
             return AgentResult(error="crash")
 
         orch = Orchestrator(_make_config(), tracker, ws, _failing_runner)
@@ -401,11 +398,10 @@ class TestRetryLogic:
         # Schedule a new timer (which cancels the old timer task)
         orch._schedule_retry_timer("ISS-1", new_token, 10.0)
 
-        # The old timer should have been cancelled and the new one should not
-        # fire yet. Wait a bit.
+        # Wait a bit for old timer to have fired (if it wasn't cancelled)
         await asyncio.sleep(0.15)
 
-        # The retry queue should still have the new entry (not consumed by old timer)
+        # The retry queue should still have the new entry
         assert "ISS-1" in orch.retry_queue
         assert orch.retry_queue["ISS-1"].token == new_token
 
@@ -428,17 +424,17 @@ class TestPolling:
         tracker = MemoryTracker()
         ws = StubWorkspace()
         runner = _make_runner()
-        config = _make_config(polling_interval_ms=60_000)  # 60s
+        config = _make_config(polling_interval_ms=60_000)
         orch = Orchestrator(config, tracker, ws, runner)
 
         await orch.start()
         await asyncio.sleep(0.15)  # let initial poll fire
 
-        # At this point, next poll is ~60s away.
+        # After initial poll, next poll should be ~60s away.
         snap1 = orch.snapshot()
-        assert snap1.poll_countdown_ms > 10_000  # well into the future
+        assert snap1.poll_countdown_ms > 10_000
 
-        # Request multiple refreshes — they should coalesce
+        # Request multiple refreshes -- they should coalesce
         orch.request_refresh()
         orch.request_refresh()
         orch.request_refresh()
@@ -482,7 +478,7 @@ class TestDispatch:
 
         orch = Orchestrator(_make_config(max_concurrent=10), tracker, ws, _capturing_runner)
         await _run_orchestrator_cycle(orch)
-        await asyncio.sleep(0.05)  # let agent tasks complete
+        await asyncio.sleep(0.05)
 
         # B (pri=1, oldest), A (pri=1, newer), C (pri=3), D (pri=None=5)
         assert dispatched == ["B", "A", "C", "D"]
@@ -492,7 +488,9 @@ class TestDispatch:
         issue = _make_issue(
             "ISS-1",
             state="Todo",
-            blockers=[BlockerInfo(issue_identifier="BLOCKER-1", state="InProgress", is_terminal=False)],
+            blocked_by=[
+                BlockerInfo(id="b1", identifier="BLOCKER-1", state="InProgress"),
+            ],
         )
         tracker = MemoryTracker(issues=[issue])
         ws = StubWorkspace()
@@ -506,8 +504,12 @@ class TestDispatch:
         runner.assert_not_called()
 
     async def test_assigned_to_another_worker_not_eligible(self) -> None:
-        """An issue assigned to a different worker is NOT dispatched."""
-        issue = _make_issue("ISS-1", state="Todo", assignee="other-worker")
+        """An issue not assigned to this worker is NOT dispatched."""
+        issue = _make_issue(
+            "ISS-1",
+            state="Todo",
+            assigned_to_worker=False,
+        )
         tracker = MemoryTracker(issues=[issue])
         ws = StubWorkspace()
         runner = _make_runner()
@@ -525,9 +527,9 @@ class TestDispatch:
         issue = _make_issue(
             "ISS-1",
             state="Todo",
-            blockers=[
-                BlockerInfo(issue_identifier="B-1", state="Done", is_terminal=True),
-                BlockerInfo(issue_identifier="B-2", state="Cancelled", is_terminal=True),
+            blocked_by=[
+                BlockerInfo(id="b1", identifier="B-1", state="Done"),
+                BlockerInfo(id="b2", identifier="B-2", state="Cancelled"),
             ],
         )
         tracker = MemoryTracker(issues=[issue])
@@ -550,24 +552,21 @@ class TestDispatch:
         runner = _make_runner()
         orch = Orchestrator(_make_config(), tracker, ws, runner)
 
-        # We need to add the blocker after the initial fetch but before
-        # re-validation.  Patch fetch_issue_states_by_ids to sneak in a blocker.
+        # Patch fetch_issue_states_by_ids to sneak in a blocker during revalidation
         original_fetch = tracker.fetch_issue_states_by_ids
-
         call_count = 0
 
         async def _fetch_with_side_effect(ids):
             nonlocal call_count
             call_count += 1
             result = await original_fetch(ids)
-            # After the first call to re-validate ISS-1, add a blocker
+            # After the first revalidation call for ISS-1, add a blocker
             if call_count == 1 and "ISS-1" in ids:
-                # Mutate the tracker's issue to have a blocker
-                tracker.issues["ISS-1"].blockers = [
+                tracker.issues["ISS-1"].blocked_by = [
                     BlockerInfo(
-                        issue_identifier="BLOCK-1",
+                        id="b1",
+                        identifier="BLOCK-1",
                         state="InProgress",
-                        is_terminal=False,
                     )
                 ]
             return result
@@ -590,7 +589,7 @@ class TestWorkerHostSelection:
     """Tests for SSH host capacity and selection."""
 
     async def test_skips_full_hosts(self) -> None:
-        """With 2 hosts and max 1 per host, filling host-A routes to host-B."""
+        """With 2 hosts and max 1 per host, filling host-a routes to host-b."""
         tracker = MemoryTracker(
             issues=[
                 _make_issue("ISS-1", state="Todo"),
@@ -603,7 +602,6 @@ class TestWorkerHostSelection:
 
         async def _capturing_runner(issue, ws_path, host):
             hosts_used.append(host)
-            # Hang so the agent stays "running"
             await asyncio.sleep(999_999)
             return AgentResult()
 
@@ -738,7 +736,6 @@ class TestSnapshot:
         )
         orch = Orchestrator(_make_config(), tracker, ws, runner)
 
-        # Dispatch two issues
         await orch._dispatch_issue(_make_issue("ISS-1", state="InProgress"))
         await orch._dispatch_issue(_make_issue("ISS-2", state="InProgress"))
         await asyncio.sleep(0.1)
@@ -770,7 +767,6 @@ class TestSnapshot:
         await asyncio.sleep(0.05)
 
         snap = orch.snapshot()
-        # The entry was removed from running (completed), but totals are updated.
         assert snap.codex_totals["total_tokens"] == 300
         assert snap.codex_totals["seconds_running"] > 0
 
@@ -821,9 +817,7 @@ class TestSnapshot:
         await asyncio.sleep(0.15)  # let initial poll fire
 
         snap = orch.snapshot()
-        # After initial poll, countdown should be set to ~60s
         assert snap.poll_countdown_ms > 0
-        # poll_checking should be False (not in the middle of a check)
         assert snap.poll_checking is False
 
         await orch.stop()
@@ -840,7 +834,6 @@ class TestSnapshot:
         await orch.start()
         await asyncio.sleep(0.25)
 
-        # The runner should have been called for ISS-1
         assert runner.call_count >= 1
 
         await orch.stop()
@@ -857,7 +850,6 @@ class TestSnapshot:
         await asyncio.sleep(0.15)  # initial poll at 100ms fires
 
         snap1 = orch.snapshot()
-        # Should be close to 30s
         assert snap1.poll_countdown_ms > 20_000
 
         # Request a manual refresh
@@ -865,7 +857,6 @@ class TestSnapshot:
         await asyncio.sleep(0.15)
 
         snap2 = orch.snapshot()
-        # Countdown reset again to ~30s
         assert snap2.poll_countdown_ms > 20_000
 
         await orch.stop()
@@ -878,7 +869,7 @@ class TestSnapshot:
         ws = StubWorkspace()
         runner = _make_runner(hang=True)
         # Use a very short stall timeout for testing
-        config = _make_config(stall_timeout_ms=1)  # 1ms — will stall immediately
+        config = _make_config(stall_timeout_ms=1)
         orch = Orchestrator(config, tracker, ws, runner)
 
         issue = _make_issue("ISS-1", state="InProgress")
@@ -890,7 +881,6 @@ class TestSnapshot:
 
         await orch._reconcile()
 
-        # Agent should be stopped and retry scheduled
         assert "ISS-1" not in orch.running
         assert "ISS-1" in orch.retry_queue
         retry = orch.retry_queue["ISS-1"]
@@ -934,7 +924,7 @@ class TestIntegration:
         )
         ws = StubWorkspace()
         runner = _make_runner(result=AgentResult(error="fail"))
-        config = _make_config(max_retry_backoff_ms=15_000)  # 15s cap
+        config = _make_config(max_retry_backoff_ms=15_000)
         orch = Orchestrator(config, tracker, ws, runner)
 
         # Simulate high attempt number
@@ -944,7 +934,7 @@ class TestIntegration:
         entry = orch.retry_queue["ISS-1"]
         # 10_000 * 2^99 would be huge, but capped at 15_000 ms = 15s
         delta = (entry.due_at - _now()).total_seconds()
-        assert delta <= 16  # 15s + tolerance
+        assert delta <= 16
 
         # Clean up timers
         for _, task in orch._retry_timers.values():
@@ -963,7 +953,6 @@ class TestIntegration:
         async def _counting_runner(issue, ws_path, host):
             nonlocal call_count
             call_count += 1
-            # After first run, mark the issue as Done in the tracker
             await tracker.update_issue_state("ISS-1", "Done")
             return AgentResult()
 
@@ -971,10 +960,9 @@ class TestIntegration:
         await _run_orchestrator_cycle(orch)
         await asyncio.sleep(0.05)
 
-        # First dispatch should happen
         assert call_count == 1
 
-        # Run another cycle — the issue is now Done, should not dispatch
+        # Run another cycle -- the issue is Done, should not dispatch
         await _run_orchestrator_cycle(orch)
         await asyncio.sleep(0.05)
         assert call_count == 1
@@ -1028,7 +1016,6 @@ class TestIntegration:
         await _run_orchestrator_cycle(orch)
         await asyncio.sleep(0.05)
 
-        # Only 1 Todo and 1 InProgress should be running
         todo_running = sum(
             1 for e in orch.running.values() if e.issue.state == "Todo"
         )

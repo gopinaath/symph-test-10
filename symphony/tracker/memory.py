@@ -51,7 +51,14 @@ class MemoryTracker(Tracker):
 
     def set_issue_assignee(self, identifier: str, assignee: Optional[str]) -> None:
         if identifier in self.issues:
-            self.issues[identifier].assignee = assignee
+            issue = self.issues[identifier]
+            if hasattr(issue, "assignee_id"):
+                issue.assignee_id = assignee
+            if hasattr(issue, "assigned_to_worker"):
+                # When assignee is set to a value, mark as assigned; None = unassigned
+                issue.assigned_to_worker = assignee is not None
+            if hasattr(issue, "assignee"):
+                issue.assignee = assignee
 
     # --- Tracker interface ---
 

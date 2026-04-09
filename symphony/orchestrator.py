@@ -90,22 +90,55 @@ AgentRunnerFactory = Callable[
 
 
 # ---------------------------------------------------------------------------
-# Workspace protocol — the orchestrator only needs create / remove.
+# Config access helpers
 # ---------------------------------------------------------------------------
+# The Config model was built by another agent using Pydantic and the field
+# names differ from the original spec.  These helpers abstract the
+# differences so the orchestrator logic reads cleanly.
 
 
-class _WorkspaceProto:
-    """Minimal workspace interface expected by the orchestrator.
+def _get_max_concurrent(config: Config) -> int:
+    """Return the global agent concurrency limit."""
+    agent = config.agent
+    return getattr(agent, "max_concurrent_agents", None) or getattr(
+        agent, "max_concurrent", 5
+    )
 
-    The real ``Workspace`` class (created by another agent) returns
-    ``Path | WorkspaceError`` from ``create``.  We handle both by duck-typing.
-    """
 
-    async def create(self, identifier: str) -> Any:
-        ...
+def _get_max_concurrent_by_state(config: Config) -> dict[str, int]:
+    agent = config.agent
+    return getattr(agent, "max_concurrent_agents_by_state", None) or getattr(
+        agent, "max_concurrent_per_state", {}
+    ) or {}
 
-    async def remove(self, identifier: str) -> Any:
-        ...
+
+def _get_stall_timeout_ms(config: Config) -> int:
+    """Return stall timeout in ms (may live on codex or agent section)."""
+    codex = getattr(config, "codex", None)
+    if codex and hasattr(codex, "stall_timeout_ms"):
+        return codex.stall_timeout_ms
+    agent = config.agent
+    return getattr(agent, "stall_timeout_ms", 600_000)
+
+
+def _get_max_retry_backoff_ms(config: Config) -> int:
+    return getattr(config.agent, "max_retry_backoff_ms", 320_000)
+
+
+def _get_polling_interval_ms(config: Config) -> int:
+    return config.polling.interval_ms
+
+
+def _get_ssh_hosts(config: Config) -> list[str]:
+    return getattr(config.worker, "ssh_hosts", []) or []
+
+
+def _get_max_per_host(config: Config) -> int:
+    return getattr(config.worker, "max_concurrent_agents_per_host", 2)
+
+
+def _get_worker_name(config: Config) -> Optional[str]:
+    return getattr(config.worker, "name", None)
 
 
 # ---------------------------------------------------------------------------
@@ -218,13 +251,13 @@ class Orchestrator:
 
     async def _poll_loop(self) -> None:
         """Main polling loop: reconcile, retry, dispatch."""
+        interval_s = _get_polling_interval_ms(self._config) / 1000.0
         while not self._stop_event.is_set():
-            # Compute how long to sleep before next poll
             now = time.monotonic()
             if self._next_poll_at is not None:
                 delay = max(0.0, self._next_poll_at - now)
             else:
-                delay = self._config.polling.interval_ms / 1000.0
+                delay = interval_s
 
             if delay > 0:
                 self._refresh_event.clear()
@@ -238,7 +271,6 @@ class Orchestrator:
             if self._stop_event.is_set():
                 break
 
-            # Run one poll cycle
             try:
                 self._poll_checking = True
                 await self._poll_cycle()
@@ -248,9 +280,7 @@ class Orchestrator:
                 self._poll_checking = False
 
             # Schedule next regular poll
-            self._next_poll_at = (
-                time.monotonic() + self._config.polling.interval_ms / 1000.0
-            )
+            self._next_poll_at = time.monotonic() + interval_s
             self._refresh_event.clear()
 
     async def _poll_cycle(self) -> None:
@@ -278,21 +308,16 @@ class Orchestrator:
             new_state = current_states.get(ident)
 
             if new_state is None:
-                # Issue disappeared — stop, no cleanup
                 await self._stop_agent(ident, clean_workspace=False)
             elif self._tracker.is_terminal_state(new_state):
-                # Terminal — stop + clean workspace
                 await self._stop_agent(ident, clean_workspace=True)
             elif not self._tracker.is_active_state(new_state):
-                # Non-active, non-terminal — stop, keep workspace
                 await self._stop_agent(ident, clean_workspace=False)
             elif self._is_reassigned(entry):
-                # Reassigned away
                 await self._stop_agent(ident, clean_workspace=False)
             else:
                 # Still active — update cached state
                 entry.issue.state = new_state
-                # Check stall
                 if self._is_stalled(entry):
                     worker_host = entry.worker_host
                     issue = entry.issue
@@ -307,17 +332,26 @@ class Orchestrator:
 
     def _is_reassigned(self, entry: RunningEntry) -> bool:
         """True if the issue is assigned to a different worker."""
-        worker_name = self._config.worker.name
+        worker_name = _get_worker_name(self._config)
         if not worker_name:
             return False
-        assignee = entry.issue.assignee
+
+        issue = entry.issue
+        # New-style model: ``assigned_to_worker`` bool
+        if hasattr(issue, "assigned_to_worker"):
+            return not issue.assigned_to_worker
+
+        # Legacy model: ``assignee`` string compared against worker name
+        assignee = getattr(issue, "assignee", None) or getattr(
+            issue, "assignee_id", None
+        )
         if assignee is None:
             return False
         return assignee != worker_name
 
     def _is_stalled(self, entry: RunningEntry) -> bool:
         """True if the agent has exceeded the stall timeout."""
-        timeout_ms = self._config.agent.stall_timeout_ms
+        timeout_ms = _get_stall_timeout_ms(self._config)
         if timeout_ms <= 0:
             return False
         now = datetime.now(timezone.utc)
@@ -356,7 +390,6 @@ class Orchestrator:
             if entry.due_at <= now and ident not in self._running
         ]
         for ident, entry in due:
-            # Re-validate state
             states = await self._tracker.fetch_issue_states_by_ids([ident])
             current_state = states.get(ident)
             if current_state is None or self._tracker.is_terminal_state(current_state):
@@ -377,10 +410,7 @@ class Orchestrator:
         """Schedule a ~1 s retry for an active issue (normal completion)."""
         due_at = datetime.now(timezone.utc) + timedelta(seconds=1)
         entry = RetryEntry(
-            issue=issue,
-            attempt=0,
-            due_at=due_at,
-            preferred_host=preferred_host,
+            issue=issue, attempt=0, due_at=due_at, preferred_host=preferred_host,
         )
         self._retry_queue[issue.identifier] = entry
         self._schedule_retry_timer(issue.identifier, entry.token, 1.0)
@@ -393,8 +423,7 @@ class Orchestrator:
         preferred_host: Optional[str] = None,
     ) -> None:
         """Schedule a retry with exponential backoff on failure."""
-        max_backoff_ms = self._config.agent.max_retry_backoff_ms
-        # 10 s * 2^(attempt-1), capped at max_retry_backoff_ms
+        max_backoff_ms = _get_max_retry_backoff_ms(self._config)
         backoff_ms = min(10_000 * (2 ** max(attempt - 1, 0)), max_backoff_ms)
         due_at = datetime.now(timezone.utc) + timedelta(milliseconds=backoff_ms)
         entry = RetryEntry(
@@ -413,7 +442,6 @@ class Orchestrator:
         self, identifier: str, token: str, delay_seconds: float
     ) -> None:
         """Fire an asyncio timer that triggers a poll after *delay_seconds*."""
-        # Cancel previous timer for this identifier
         if identifier in self._retry_timers:
             _old_token, old_task = self._retry_timers[identifier]
             old_task.cancel()
@@ -423,7 +451,6 @@ class Orchestrator:
                 await asyncio.sleep(delay_seconds)
             except asyncio.CancelledError:
                 return
-            # Only act if this token is still the current retry entry
             entry = self._retry_queue.get(identifier)
             if entry is not None and entry.token == token:
                 self.request_refresh()
@@ -467,7 +494,8 @@ class Orchestrator:
                 continue
             issue.state = current_state
 
-            # Re-check eligibility after refresh (blocker may have appeared)
+            # Re-check eligibility (blocker may have appeared between initial
+            # check and re-validation)
             if not self._is_dispatch_eligible(issue):
                 continue
 
@@ -485,22 +513,43 @@ class Orchestrator:
             return False
 
         # Todo with a non-terminal blocker => skip
-        if issue.state == "Todo" and issue.blockers:
-            if any(not b.is_terminal for b in issue.blockers):
+        blockers = getattr(issue, "blocked_by", None) or getattr(
+            issue, "blockers", None
+        ) or []
+        if issue.state == "Todo" and blockers:
+            has_non_terminal = False
+            for b in blockers:
+                if hasattr(b, "is_terminal"):
+                    if not b.is_terminal:
+                        has_non_terminal = True
+                        break
+                else:
+                    if not self._tracker.is_terminal_state(b.state):
+                        has_non_terminal = True
+                        break
+            if has_non_terminal:
                 return False
 
         # Assigned to a different worker
-        if self._config.worker.name and issue.assignee:
-            if issue.assignee != self._config.worker.name:
-                return False
+        worker_name = _get_worker_name(self._config)
+        if worker_name:
+            if hasattr(issue, "assigned_to_worker"):
+                if not issue.assigned_to_worker:
+                    return False
+            else:
+                assignee = getattr(issue, "assignee", None) or getattr(
+                    issue, "assignee_id", None
+                )
+                if assignee and assignee != worker_name:
+                    return False
 
         return True
 
     def _has_global_capacity(self) -> bool:
-        return len(self._running) < self._config.agent.max_concurrent
+        return len(self._running) < _get_max_concurrent(self._config)
 
     def _has_state_capacity(self, state: str) -> bool:
-        limits = self._config.agent.max_concurrent_per_state
+        limits = _get_max_concurrent_by_state(self._config)
         if not limits or state not in limits:
             return True
         count = sum(1 for e in self._running.values() if e.issue.state == state)
@@ -508,27 +557,26 @@ class Orchestrator:
 
     def _has_host_capacity(self, host: Optional[str] = None) -> bool:
         """True if at least one SSH host has capacity (or no hosts configured)."""
-        hosts = self._config.worker.ssh_hosts
+        hosts = _get_ssh_hosts(self._config)
         if not hosts:
             return True
         if host:
             count = sum(1 for e in self._running.values() if e.worker_host == host)
-            return count < self._config.worker.max_concurrent_agents_per_host
+            return count < _get_max_per_host(self._config)
         return self._pick_host() is not None
 
     def _pick_host(self, preferred: Optional[str] = None) -> Optional[str]:
         """Return the least-loaded SSH host with available capacity."""
-        hosts = self._config.worker.ssh_hosts
+        hosts = _get_ssh_hosts(self._config)
         if not hosts:
             return None
 
-        max_per = self._config.worker.max_concurrent_agents_per_host
+        max_per = _get_max_per_host(self._config)
         load: dict[str, int] = {h: 0 for h in hosts}
         for entry in self._running.values():
             if entry.worker_host and entry.worker_host in load:
                 load[entry.worker_host] += 1
 
-        # Prefer hint if it still has room
         if preferred and preferred in load and load[preferred] < max_per:
             return preferred
 
@@ -546,7 +594,7 @@ class Orchestrator:
         attempt: int = 0,
     ) -> None:
         """Create workspace and launch an agent task for *issue*."""
-        hosts = self._config.worker.ssh_hosts
+        hosts = _get_ssh_hosts(self._config)
         worker_host: Optional[str] = None
         if hosts:
             worker_host = self._pick_host(preferred=preferred_host)
@@ -556,13 +604,10 @@ class Orchestrator:
                 )
                 return
 
-        # Create workspace — handle both old (returns str) and new (returns
-        # Path | WorkspaceError) workspace implementations.
         ws_result = await self._workspace.create(issue.identifier)
         if isinstance(ws_result, (str, Path)):
             workspace_path = str(ws_result)
         else:
-            # WorkspaceError or similar sentinel
             logger.error(
                 "Workspace creation failed for %s: %s",
                 issue.identifier,
@@ -603,23 +648,18 @@ class Orchestrator:
                 issue, workspace_path, worker_host
             )
         except asyncio.CancelledError:
-            # Externally cancelled (reconciliation / shutdown) — no retry
             return
         except Exception as exc:
             result = AgentResult(error=str(exc))
 
-        # Remove from running
         entry = self._running.pop(identifier, None)
         if entry is None:
-            return  # already removed by reconciliation
+            return
 
-        # Update codex totals
         if result:
             self._update_codex_totals(entry, result)
 
-        # Decide: retry or complete
         if result and result.error:
-            # Abnormal exit — exponential backoff
             next_attempt = attempt + 1
             self._schedule_failure_retry(
                 issue,
@@ -628,9 +668,7 @@ class Orchestrator:
                 preferred_host=worker_host,
             )
         else:
-            # Normal completion
             self._completed.add(identifier)
-            # If still active, schedule continuation
             states = await self._tracker.fetch_issue_states_by_ids([identifier])
             current_state = states.get(identifier)
             if current_state and self._tracker.is_active_state(current_state):
