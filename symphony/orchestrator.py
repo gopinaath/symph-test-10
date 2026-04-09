@@ -485,21 +485,44 @@ class Orchestrator:
             if not self._has_host_capacity():
                 continue
 
-            # Re-validate state before actual dispatch
-            states = await self._tracker.fetch_issue_states_by_ids(
-                [issue.identifier]
-            )
-            current_state = states.get(issue.identifier)
-            if current_state is None or self._tracker.is_terminal_state(current_state):
-                continue
-            issue.state = current_state
-
-            # Re-check eligibility (blocker may have appeared between initial
-            # check and re-validation)
-            if not self._is_dispatch_eligible(issue):
+            # Re-validate: re-fetch the issue to pick up any state or blocker
+            # changes that occurred since the initial fetch.
+            fresh = await self._revalidate_issue(issue)
+            if fresh is None:
                 continue
 
-            await self._dispatch_issue(issue)
+            if not self._is_dispatch_eligible(fresh):
+                continue
+
+            await self._dispatch_issue(fresh)
+
+    async def _revalidate_issue(self, issue: Issue) -> Optional[Issue]:
+        """Re-fetch the latest issue data before dispatch.
+
+        Returns the updated issue, or ``None`` if it should be skipped
+        (disappeared or moved to terminal state).
+        """
+        # First check state is still valid
+        states = await self._tracker.fetch_issue_states_by_ids(
+            [issue.identifier]
+        )
+        current_state = states.get(issue.identifier)
+        if current_state is None or self._tracker.is_terminal_state(current_state):
+            return None
+
+        # Re-fetch the full issue from the tracker to pick up any blocker
+        # or assignment changes.
+        refreshed = await self._tracker.fetch_candidate_issues()
+        refreshed_map = {i.identifier: i for i in refreshed}
+        if issue.identifier in refreshed_map:
+            fresh_issue = refreshed_map[issue.identifier]
+            fresh_issue.state = current_state
+            return fresh_issue
+
+        # If the issue is no longer a candidate, use the original with
+        # updated state.
+        issue.state = current_state
+        return issue
 
     def _is_dispatch_eligible(self, issue: Issue) -> bool:
         """True if the issue can be dispatched right now."""
@@ -550,10 +573,17 @@ class Orchestrator:
 
     def _has_state_capacity(self, state: str) -> bool:
         limits = _get_max_concurrent_by_state(self._config)
-        if not limits or state not in limits:
+        if not limits:
             return True
-        count = sum(1 for e in self._running.values() if e.issue.state == state)
-        return count < limits[state]
+        # Keys may be normalized to lowercase by the config validator.
+        limit = limits.get(state) or limits.get(state.lower())
+        if limit is None:
+            return True
+        count = sum(
+            1 for e in self._running.values()
+            if e.issue.state == state or e.issue.state.lower() == state.lower()
+        )
+        return count < limit
 
     def _has_host_capacity(self, host: Optional[str] = None) -> bool:
         """True if at least one SSH host has capacity (or no hosts configured)."""

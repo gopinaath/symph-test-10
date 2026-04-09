@@ -28,6 +28,9 @@ symphony = "symphony.cli:main"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 timeout = 30
+markers = [
+    "e2e: end-to-end tests requiring external services (vLLM, GitHub)",
+]
 
 [tool.setuptools.packages.find]
 include = ["symphony*"]

@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<symphony-gaps version="1.0" created="2026-04-09" total-gaps="24">
+
+  <!-- ================================================================== -->
+  <!-- CATEGORY: End-to-End Integration                                   -->
+  <!-- ================================================================== -->
+  <category name="e2e-integration">
+
+    <gap id="E2E-001" priority="1" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
+      <title>Validate vLLM/Gemma 4 endpoint connectivity</title>
+      <description>
+        Verify that the Python orchestrator can connect to the vLLM Gemma 4
+        instance running on the p5en GPU box. Test the OpenAI-compatible
+        /v1/chat/completions endpoint with a simple prompt.
+      </description>
+      <elixir-equivalent>N/A — new capability</elixir-equivalent>
+      <test-file>tests/test_e2e_gemma4.py</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="E2E-002" priority="1" status="open" locked-by="" locked-at="">
+      <title>End-to-end orchestrator with real GitHub issue and Gemma 4</title>
+      <description>
+        Create a real GitHub issue in symph-test-10 repo, start the orchestrator
+        pointing at vLLM/Gemma 4 endpoint, verify it picks up the issue, spawns
+        an agent, generates code, and completes the turn. Equivalent to Elixir
+        live_e2e_test.exs but using GitHub Issues + Gemma 4 instead of Linear + GPT.
+      </description>
+      <elixir-equivalent>live_e2e_test.exs (2 tests)</elixir-equivalent>
+      <test-file>tests/test_e2e_orchestrator.py</test-file>
+      <depends-on>E2E-001</depends-on>
+    </gap>
+
+    <gap id="E2E-003" priority="2" status="open" locked-by="" locked-at="">
+      <title>Full subprocess protocol test against real Codex/agent</title>
+      <description>
+        Test the AppServer JSON-RPC client against a real codex app-server
+        subprocess (or a mock server that faithfully implements the protocol),
+        verifying the full initialize/thread/turn lifecycle with actual stdio.
+      </description>
+      <elixir-equivalent>app_server_test.exs subprocess tests</elixir-equivalent>
+      <test-file>tests/test_e2e_app_server.py</test-file>
+      <depends-on>E2E-001</depends-on>
+    </gap>
+
+  </category>
+
+  <!-- ================================================================== -->
+  <!-- CATEGORY: Missing Test Coverage (from Elixir suite)                -->
+  <!-- ================================================================== -->
+  <category name="missing-tests">
+
+    <gap id="TEST-001" priority="2" status="open" locked-by="" locked-at="">
+      <title>Terminal status dashboard golden snapshot tests</title>
+      <description>
+        Port status_dashboard_snapshot_test.exs: idle dashboard, idle with URL,
+        super busy dashboard, backoff queue pressure, escaped newlines in errors,
+        unlimited credits variant. Requires implementing the full terminal
+        renderer first (IMPL-001).
+      </description>
+      <elixir-equivalent>status_dashboard_snapshot_test.exs (12 tests)</elixir-equivalent>
+      <test-file>tests/test_status_dashboard_snapshots.py</test-file>
+      <depends-on>IMPL-001</depends-on>
+    </gap>
+
+    <gap id="TEST-002" priority="2" status="open" locked-by="" locked-at="">
+      <title>Extensions integration tests</title>
+      <description>
+        Port extensions_test.exs: workflow store lifecycle (hot-reload, broken
+        YAML keeps last good, path change, stopped store still serves cached),
+        tracker delegation (memory + github adapters), Phoenix API responses
+        (GET /state, GET /:identifier, POST /refresh, 405/404/unavailable/timeout).
+      </description>
+      <elixir-equivalent>extensions_test.exs (~15 tests)</elixir-equivalent>
+      <test-file>tests/test_extensions.py</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="TEST-003" priority="2" status="open" locked-by="" locked-at="">
+      <title>Orchestrator status snapshot edge cases</title>
+      <description>
+        Missing from orchestrator_status_test.exs: TPS graph rendering for steady
+        and ramping throughput, historical TPS bar stability, terminal width
+        expansion, full codex event set humanization (17 event types), dynamic
+        tool wrapper events, nested payload envelope unwrapping, shell command
+        line as exec status, auto-approval/auto-answered formatting, reasoning
+        and message streaming enrichment.
+      </description>
+      <elixir-equivalent>orchestrator_status_test.exs (~15 missing tests)</elixir-equivalent>
+      <test-file>tests/test_orchestrator_status.py</test-file>
+      <depends-on>IMPL-001</depends-on>
+    </gap>
+
+    <gap id="TEST-004" priority="3" status="open" locked-by="" locked-at="">
+      <title>Config env fallback edge cases</title>
+      <description>
+        Missing from core_test.exs: LINEAR_API_KEY env var fallback for tracker
+        api_key, LINEAR_ASSIGNEE env var fallback, legacy "env:" references
+        treated as literals, schema parse normalizes policy keys, sandbox policy
+        resolution (explicit pass-through, default from workspace root, remote
+        vs local expansion).
+      </description>
+      <elixir-equivalent>core_test.exs + workspace_and_config_test.exs (~8 tests)</elixir-equivalent>
+      <test-file>tests/test_config.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="TEST-005" priority="3" status="open" locked-by="" locked-at="">
+      <title>Remote SSH workspace lifecycle tests</title>
+      <description>
+        Missing from workspace_and_config_test.exs: remote workspace create/hooks/
+        remove use SSH host aliases from worker config, SSH port parsing, remote
+        sandbox policy resolution, tilde path expansion for local vs raw for remote.
+      </description>
+      <elixir-equivalent>workspace_and_config_test.exs (~5 tests)</elixir-equivalent>
+      <test-file>tests/test_workspace_ssh.py</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="TEST-006" priority="3" status="open" locked-by="" locked-at="">
+      <title>Linear client edge cases</title>
+      <description>
+        Missing tests: pagination merge preserves ordering, paginates state
+        fetches beyond one page (55 IDs split into 50+5), logs response bodies
+        for non-200 GraphQL responses, marks explicitly unassigned issues as
+        not routed to worker.
+      </description>
+      <elixir-equivalent>workspace_and_config_test.exs linear client tests (~5 tests)</elixir-equivalent>
+      <test-file>tests/test_tracker.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="TEST-007" priority="3" status="open" locked-by="" locked-at="">
+      <title>Prompt builder in-repo WORKFLOW.md rendering test</title>
+      <description>
+        Test that the actual WORKFLOW.md in the repo renders correctly with
+        continuation and attempt context. Verify the in-repo file is valid.
+      </description>
+      <elixir-equivalent>core_test.exs "current WORKFLOW.md file is valid" + prompt builder tests</elixir-equivalent>
+      <test-file>tests/test_prompt_builder.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="TEST-008" priority="3" status="open" locked-by="" locked-at="">
+      <title>App server agent runner integration edge cases</title>
+      <description>
+        Missing: app server startup with configurable codex args from workflow,
+        agent runner surfaces SSH startup failures with proper error type,
+        agent runner forwards timestamped codex updates with session_id.
+        Some of these may be partially covered but need deeper assertions.
+      </description>
+      <elixir-equivalent>core_test.exs agent runner tests (~3 tests)</elixir-equivalent>
+      <test-file>tests/test_agent_runner.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+  </category>
+
+  <!-- ================================================================== -->
+  <!-- CATEGORY: Missing Implementation                                    -->
+  <!-- ================================================================== -->
+  <category name="missing-implementation">
+
+    <gap id="IMPL-001" priority="2" status="open" locked-by="" locked-at="">
+      <title>Terminal status dashboard renderer</title>
+      <description>
+        Implement the full ANSI terminal UI renderer equivalent to Elixir
+        StatusDashboard GenServer. Features: agent table with columns (ISSUE,
+        STATE, SESSION, TURNS, TOKENS, EVENT, STARTED, HOST), retry queue table,
+        token throughput with 10-minute sparkline graph, rate limits display,
+        poll countdown, coalesced rendering (rate-limited to render_interval_ms),
+        terminal width detection and row expansion.
+      </description>
+      <elixir-equivalent>status_dashboard.ex</elixir-equivalent>
+      <impl-file>symphony/status_dashboard.py</impl-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="IMPL-002" priority="3" status="open" locked-by="" locked-at="">
+      <title>PR cleanup on workspace removal</title>
+      <description>
+        Implement workspace.before_remove task that finds and closes open PRs
+        for the branch being removed. Uses gh CLI to list and close PRs.
+        Tolerates close failures. No-ops when git/gh unavailable.
+      </description>
+      <elixir-equivalent>mix/tasks/workspace.before_remove.ex + test (~10 tests)</elixir-equivalent>
+      <impl-file>symphony/pr_cleanup.py</impl-file>
+      <test-file>tests/test_pr_cleanup.py</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="IMPL-003" priority="4" status="open" locked-by="" locked-at="">
+      <title>PR body format checker</title>
+      <description>
+        Implement PR body validation: template headings present and in order,
+        no placeholder text remaining, non-empty sections, bullet/checkbox
+        requirements met. Port from pr_body.check mix task.
+      </description>
+      <elixir-equivalent>mix/tasks/pr_body.check.ex + test (~15 tests)</elixir-equivalent>
+      <impl-file>symphony/pr_body_check.py</impl-file>
+      <test-file>tests/test_pr_body_check.py</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="IMPL-004" priority="2" status="open" locked-by="" locked-at="">
+      <title>LiveView dashboard PubSub push instead of polling</title>
+      <description>
+        Replace the 1s polling in the Phoenix LiveView dashboard with WebSocket
+        push from the Python backend. Python FastAPI should broadcast state
+        changes via WebSocket; Phoenix LiveView should subscribe and render
+        on push events rather than polling /api/v1/state.
+      </description>
+      <elixir-equivalent>observability_pubsub.ex + dashboard_live.ex push model</elixir-equivalent>
+      <impl-file>symphony/api.py (extend) + dashboard LiveView (extend)</impl-file>
+      <depends-on></depends-on>
+    </gap>
+
+  </category>
+
+  <!-- ================================================================== -->
+  <!-- CATEGORY: Code Quality                                              -->
+  <!-- ================================================================== -->
+  <category name="code-quality">
+
+    <gap id="QUAL-001" priority="2" status="open" locked-by="" locked-at="">
+      <title>Run mypy strict mode and fix type errors</title>
+      <description>
+        Run mypy with strict mode across the entire symphony/ package. Fix
+        all type errors, add missing type annotations, resolve Any usage.
+      </description>
+      <elixir-equivalent>specs_check.ex + specs_check_task_test.exs</elixir-equivalent>
+      <impl-file>mypy.ini or pyproject.toml [tool.mypy]</impl-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="QUAL-002" priority="3" status="open" locked-by="" locked-at="">
+      <title>Run ruff linter and fix all warnings</title>
+      <description>
+        Add ruff configuration, run across entire codebase, fix all warnings.
+        Enforce consistent style.
+      </description>
+      <elixir-equivalent>.formatter.exs / mix format</elixir-equivalent>
+      <impl-file>pyproject.toml [tool.ruff]</impl-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="QUAL-003" priority="3" status="open" locked-by="" locked-at="">
+      <title>Review agent-generated code for logic correctness</title>
+      <description>
+        Four agents wrote code in parallel with interface mismatches. While
+        field name issues were fixed, the orchestrator dispatch logic, retry
+        state machine, and reconciliation logic need manual review for subtle
+        bugs that tests may not catch (race conditions, edge cases in async
+        task management, token accounting arithmetic).
+      </description>
+      <elixir-equivalent>N/A — quality gate</elixir-equivalent>
+      <impl-file>symphony/orchestrator.py, symphony/agent_runner.py</impl-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="QUAL-004" priority="4" status="open" locked-by="" locked-at="">
+      <title>Add GitHub Actions CI pipeline</title>
+      <description>
+        Set up .github/workflows/ci.yml with: pytest, mypy, ruff, and
+        optionally the Phoenix dashboard compilation check.
+      </description>
+      <elixir-equivalent>N/A</elixir-equivalent>
+      <impl-file>.github/workflows/ci.yml</impl-file>
+      <depends-on>QUAL-001 QUAL-002</depends-on>
+    </gap>
+
+  </category>
+
+  <!-- ================================================================== -->
+  <!-- CATEGORY: Robustness                                                -->
+  <!-- ================================================================== -->
+  <category name="robustness">
+
+    <gap id="ROB-001" priority="2" status="open" locked-by="" locked-at="">
+      <title>GitHub tracker retry and rate limiting</title>
+      <description>
+        Add exponential backoff retry on transient HTTP errors (429, 500, 502,
+        503) and respect GitHub's X-RateLimit-Remaining/Reset headers. The
+        Elixir Linear adapter handles this; our GitHub adapter does not.
+      </description>
+      <elixir-equivalent>linear/client.ex retry and rate limit handling</elixir-equivalent>
+      <impl-file>symphony/tracker/github.py</impl-file>
+      <test-file>tests/test_tracker.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="ROB-002" priority="3" status="open" locked-by="" locked-at="">
+      <title>WorkflowStore concurrent-safe caching</title>
+      <description>
+        The current WorkflowStore hot-reload is simpler than the Elixir
+        GenServer version. Needs proper thread-safe caching with asyncio
+        locks, scheduled polling via asyncio.create_task, and graceful
+        shutdown. Currently uses threading.Thread which may not integrate
+        cleanly with the asyncio event loop.
+      </description>
+      <elixir-equivalent>workflow_store.ex GenServer</elixir-equivalent>
+      <impl-file>symphony/workflow.py</impl-file>
+      <test-file>tests/test_workflow.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+    <gap id="ROB-003" priority="3" status="open" locked-by="" locked-at="">
+      <title>Graceful orchestrator shutdown</title>
+      <description>
+        Ensure orchestrator.stop() properly cancels all running agent tasks,
+        waits for graceful completion or timeout, saves state, and renders
+        offline status. Test that in-flight agents are cleaned up.
+      </description>
+      <elixir-equivalent>application stop callback in status_dashboard_test</elixir-equivalent>
+      <impl-file>symphony/orchestrator.py</impl-file>
+      <test-file>tests/test_orchestrator.py (extend)</test-file>
+      <depends-on></depends-on>
+    </gap>
+
+  </category>
+
+</symphony-gaps>
