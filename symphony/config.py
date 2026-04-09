@@ -133,7 +133,7 @@ class CodexConfig(BaseModel):
     @field_validator("approval_policy")
     @classmethod
     def _validate_policy(cls, v: str) -> str:
-        allowed = {"suggest", "auto-edit", "full-auto"}
+        allowed = {"suggest", "auto-edit", "full-auto", "never"}
         if v not in allowed:
             raise ValueError(f"codex.approval_policy must be one of {allowed}, got {v!r}")
         return v

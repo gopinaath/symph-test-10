@@ -235,3 +235,66 @@ class TestAgentRunnerMaxTurns:
         # Only turn 1 should have executed — turn 2 checks is_terminal() first.
         assert result.turns_executed == 1
         assert result.stopped_reason == "terminal_state"
+
+
+# ---------------------------------------------------------------------------
+# TEST-008: Agent runner integration edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestAgentRunnerSessionId:
+    """Verify the session_started callback includes session_id."""
+
+    @pytest.mark.asyncio
+    async def test_agent_runner_reports_session_id_in_first_update(self):
+        """The session_started callback must fire with the session_id
+        returned by app_server.start_thread, before any turns complete."""
+        issue = FakeIssue()
+        ws = FakeWorkspace()
+        callback = FakeCallback()
+        server = _fake_app_server(session_id="unique-session-abc")
+        cfg = AgentRunnerConfig(max_turns=1)
+
+        runner = AgentRunner(cfg, app_server_factory=_factory_returning(server))
+        await runner.run(issue, ws, callback=callback)
+
+        # session_started should have been called exactly once.
+        assert len(callback.sessions) == 1
+        assert callback.sessions[0] == "unique-session-abc"
+
+        # The session callback should fire before any turn_completed.
+        # Since we only have 1 turn, verify both fired.
+        assert len(callback.turns) == 1
+
+
+class TestAgentRunnerContinuationPrompt:
+    """Verify turn 2+ uses different prompt text from the initial turn."""
+
+    @pytest.mark.asyncio
+    async def test_continuation_prompt_differs_from_initial(self):
+        """When a prompt_builder is configured, the initial prompt (turn 1)
+        must differ from the continuation prompt (turn 2+)."""
+        issue = FakeIssue(state="active")
+        ws = FakeWorkspace()
+        server = _fake_app_server()
+        cfg = AgentRunnerConfig(max_turns=2)
+
+        builder = FakePromptBuilder()
+        runner = AgentRunner(
+            cfg,
+            prompt_builder=builder,
+            app_server_factory=_factory_returning(server),
+        )
+        await runner.run(issue, ws)
+
+        calls = server.run_turn.call_args_list
+        assert len(calls) == 2
+
+        prompt_turn1 = calls[0].kwargs["input_text"]
+        prompt_turn2 = calls[1].kwargs["input_text"]
+
+        # The two prompts must be different.
+        assert prompt_turn1 != prompt_turn2
+        # Turn 1 uses "Initial:", turn 2 uses "Continue (turn 2):".
+        assert prompt_turn1.startswith("Initial:")
+        assert prompt_turn2.startswith("Continue (turn 2):")

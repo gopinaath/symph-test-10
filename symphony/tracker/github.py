@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import random
 import re
+import time
 from typing import Any
 
 import httpx
@@ -14,6 +18,13 @@ _BLOCKED_RE = re.compile(r"blocked\s+by\s+#(\d+)", re.IGNORECASE)
 _PRIORITY_RE = re.compile(r"^priority:(\d+)$")
 
 _PAGE_SIZE = 100
+
+_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 3
+_BASE_DELAY = 1.0  # seconds
+_RATE_LIMIT_WARNING_THRESHOLD = 10  # warn when remaining falls below this
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubTracker(Tracker):
@@ -48,6 +59,83 @@ class GitHubTracker(Tracker):
 
     def _repo_url(self, path: str = "") -> str:
         return f"/repos/{self.owner}/{self.repo}{path}"
+
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """Send an HTTP request with retry on transient errors and rate-limit awareness."""
+        last_exc: Exception | None = None
+
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                resp = await self._client.request(method, url, params=params, json=json)
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                if attempt == _MAX_RETRIES:
+                    raise
+                delay = _BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warning("Request to %s timed out (attempt %d/%d), retrying in %.1fs", url, attempt, _MAX_RETRIES, delay)
+                await asyncio.sleep(delay)
+                continue
+
+            # Check rate-limit headers before evaluating the response status.
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            limit = resp.headers.get("X-RateLimit-Limit")
+            reset = resp.headers.get("X-RateLimit-Reset")
+
+            if remaining is not None and limit is not None:
+                remaining_int = int(remaining)
+                if remaining_int < _RATE_LIMIT_WARNING_THRESHOLD:
+                    logger.warning(
+                        "GitHub rate limit low: %s/%s remaining (resets at %s)",
+                        remaining,
+                        limit,
+                        reset,
+                    )
+
+            # If rate-limited (remaining == 0), wait until reset.
+            if remaining is not None and int(remaining) == 0 and reset is not None:
+                reset_time = int(reset)
+                wait = max(reset_time - time.time(), 0) + 1  # +1s buffer
+                if resp.status_code == 429 or wait > 0:
+                    logger.info("Rate limit exhausted, sleeping %.1fs until reset", wait)
+                    await asyncio.sleep(wait)
+
+            # Handle transient errors with retry.
+            if resp.status_code in _TRANSIENT_STATUS_CODES:
+                if attempt == _MAX_RETRIES:
+                    resp.raise_for_status()
+
+                # Respect Retry-After header on 429.
+                retry_after = resp.headers.get("Retry-After")
+                if resp.status_code == 429 and retry_after is not None:
+                    delay = float(retry_after)
+                else:
+                    delay = _BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+
+                logger.warning(
+                    "Transient %d from %s (attempt %d/%d), retrying in %.1fs",
+                    resp.status_code,
+                    url,
+                    attempt,
+                    _MAX_RETRIES,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+
+            # Non-transient errors: fail immediately.
+            return resp
+
+        # Should not reach here, but satisfy type checker.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Unreachable: max retries exceeded without response")  # pragma: no cover
 
     def _label_for_state(self, state: str) -> str:
         return self._state_labels.get(state, state)
@@ -110,7 +198,7 @@ class GitHubTracker(Tracker):
         all_items: list[dict[str, Any]] = []
         while True:
             params["page"] = page
-            resp = await self._client.get(url, params=params)
+            resp = await self._request_with_retry("GET", url, params=params)
             resp.raise_for_status()
             items = resp.json()
             if not items:
@@ -163,7 +251,7 @@ class GitHubTracker(Tracker):
     async def fetch_issue_states_by_ids(self, identifiers: list[str]) -> dict[str, str | None]:
         result: dict[str, str | None] = {}
         for ident in identifiers:
-            resp = await self._client.get(self._repo_url(f"/issues/{ident}"))
+            resp = await self._request_with_retry("GET", self._repo_url(f"/issues/{ident}"))
             if resp.status_code == 200:
                 data = resp.json()
                 issue = self._issue_from_gh(data)
@@ -173,7 +261,8 @@ class GitHubTracker(Tracker):
         return result
 
     async def create_comment(self, identifier: str, body: str) -> None:
-        resp = await self._client.post(
+        resp = await self._request_with_retry(
+            "POST",
             self._repo_url(f"/issues/{identifier}/comments"),
             json={"body": body},
         )
@@ -182,7 +271,7 @@ class GitHubTracker(Tracker):
     async def update_issue_state(self, identifier: str, state: str) -> None:
         label = self._label_for_state(state)
         # Fetch current labels to swap state labels.
-        resp = await self._client.get(self._repo_url(f"/issues/{identifier}"))
+        resp = await self._request_with_retry("GET", self._repo_url(f"/issues/{identifier}"))
         resp.raise_for_status()
         data = resp.json()
         current_labels = [lbl["name"] for lbl in data.get("labels", [])]
@@ -194,7 +283,8 @@ class GitHubTracker(Tracker):
 
         gh_state = "closed" if state == "closed" else "open"
 
-        resp = await self._client.patch(
+        resp = await self._request_with_retry(
+            "PATCH",
             self._repo_url(f"/issues/{identifier}"),
             json={"labels": new_labels, "state": gh_state},
         )

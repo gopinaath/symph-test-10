@@ -252,3 +252,172 @@ class TestSettingsSingleton:
         cfg = Config()
         set_config(cfg)
         assert settings() is cfg
+
+
+# ---------------------------------------------------------------------------
+# TEST-004: Config env fallback edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyEnvReferences:
+    """Legacy 'env:' references are treated as literal strings."""
+
+    def test_env_colon_prefix_treated_as_literal(self) -> None:
+        """A value like 'env:MY_SECRET' is NOT resolved -- it's a literal
+        string.  Only the ``$VAR`` syntax triggers env resolution."""
+        t = TrackerConfig(api_key="env:MY_SECRET")
+        assert t.api_key == "env:MY_SECRET"
+
+    def test_env_colon_prefix_with_spaces_treated_as_literal(self) -> None:
+        t = TrackerConfig(api_key="env: MY_SECRET ")
+        assert t.api_key == "env: MY_SECRET "
+
+    def test_env_colon_in_assignee_treated_as_literal(self) -> None:
+        t = TrackerConfig(assignee="env:SOME_USER")
+        assert t.assignee == "env:SOME_USER"
+
+
+class TestSchemaNormalizesPolicyKeys:
+    """Schema parse normalizes policy keys (state keys lowercased)."""
+
+    def test_from_yaml_normalizes_by_state_keys(self) -> None:
+        """Config.from_yaml normalizes max_concurrent_agents_by_state keys
+        to lowercase."""
+        cfg = Config.from_yaml(
+            {
+                "agent": {
+                    "max_concurrent_agents_by_state": {
+                        "In Progress": 3,
+                        "TODO": 5,
+                        "Review": 1,
+                    }
+                }
+            }
+        )
+        keys = cfg.agent.max_concurrent_agents_by_state
+        assert "in progress" in keys
+        assert "todo" in keys
+        assert "review" in keys
+        assert keys["in progress"] == 3
+        assert keys["todo"] == 5
+        assert keys["review"] == 1
+
+    def test_mixed_case_state_keys_all_lowered(self) -> None:
+        a = AgentConfig(
+            max_concurrent_agents_by_state={
+                "IN PROGRESS": 2,
+                "tOdO": 4,
+                "Done": 1,
+            }
+        )
+        assert set(a.max_concurrent_agents_by_state.keys()) == {
+            "in progress",
+            "todo",
+            "done",
+        }
+
+    def test_approval_policy_normalized_values(self) -> None:
+        """Approval policy accepts the exact allowed values."""
+        from symphony.config import CodexConfig
+
+        for policy in ("suggest", "auto-edit", "full-auto"):
+            c = CodexConfig(approval_policy=policy)
+            assert c.approval_policy == policy
+
+
+class TestSandboxPolicyResolution:
+    """Sandbox policy resolution: explicit pass-through, default from config."""
+
+    def test_explicit_sandbox_policy_passes_through(self) -> None:
+        """When sandbox_policy is explicitly set, it is used as-is."""
+        from symphony.config import CodexConfig
+
+        c = CodexConfig(thread_sandbox="strict", turn_sandbox_policy="none")
+        assert c.thread_sandbox == "strict"
+        assert c.turn_sandbox_policy == "none"
+
+    def test_default_sandbox_policy_from_codex_config(self) -> None:
+        """Default sandbox policies come from CodexConfig defaults."""
+        from symphony.config import CodexConfig
+
+        c = CodexConfig()
+        assert c.thread_sandbox == "light"
+        assert c.turn_sandbox_policy == "light"
+
+    def test_workspace_root_default(self) -> None:
+        """Default workspace root is /tmp/symphony_workspaces."""
+        from symphony.config import WorkspaceConfig
+
+        w = WorkspaceConfig()
+        assert w.root == "/tmp/symphony_workspaces"
+
+    def test_explicit_workspace_root_passes_through(self) -> None:
+        """Explicit workspace root is stored as-is."""
+        from symphony.config import WorkspaceConfig
+
+        w = WorkspaceConfig(root="/custom/path")
+        assert w.root == "/custom/path"
+
+
+class TestEmptyEnvVarFallback:
+    """Empty $VAR falls back to default env var name."""
+
+    def test_dollar_only_is_literal(self) -> None:
+        """A bare '$' (no variable name) is treated as a literal string."""
+        t = TrackerConfig(api_key="$")
+        assert t.api_key == "$"
+
+    def test_dollar_with_invalid_name_is_literal(self) -> None:
+        """$123 does not match the $ENV_VAR pattern and passes through."""
+        t = TrackerConfig(api_key="$123")
+        assert t.api_key == "$123"
+
+    def test_dollar_with_spaces_is_literal(self) -> None:
+        """'$ MY_VAR' is not a valid env reference."""
+        t = TrackerConfig(api_key="$ MY_VAR")
+        assert t.api_key == "$ MY_VAR"
+
+    def test_dollar_embedded_in_string_is_literal(self) -> None:
+        """'prefix$VAR' is not resolved because the $ is not at the start
+        of the value (after stripping)."""
+        t = TrackerConfig(api_key="prefix$VAR")
+        assert t.api_key == "prefix$VAR"
+
+    def test_env_var_set_to_empty_string_resolves_to_empty(self) -> None:
+        """If the env var exists but is empty, the resolved value is empty string."""
+        with mock.patch.dict(os.environ, {"EMPTY_VAR": ""}):
+            t = TrackerConfig(api_key="$EMPTY_VAR")
+            assert t.api_key == ""
+
+
+class TestWorkspaceRootTildeExpansion:
+    """Config workspace root tilde expansion for local use."""
+
+    def test_tilde_in_workspace_root_stored_as_is(self) -> None:
+        """WorkspaceConfig stores the tilde path as-is (expansion happens
+        at usage time, not at config parse time)."""
+        from symphony.config import WorkspaceConfig
+
+        w = WorkspaceConfig(root="~/my_workspaces")
+        assert w.root == "~/my_workspaces"
+
+    def test_tilde_expansion_can_be_done_at_runtime(self) -> None:
+        """os.path.expanduser can expand the stored tilde path."""
+        from symphony.config import WorkspaceConfig
+
+        w = WorkspaceConfig(root="~/my_workspaces")
+        expanded = os.path.expanduser(w.root)
+        assert "~" not in expanded
+        assert expanded.endswith("/my_workspaces")
+
+    def test_absolute_workspace_root_unchanged(self) -> None:
+        """An absolute path without tilde is stored unchanged."""
+        from symphony.config import WorkspaceConfig
+
+        w = WorkspaceConfig(root="/var/workspaces")
+        assert w.root == "/var/workspaces"
+
+    def test_full_config_workspace_root_with_tilde(self) -> None:
+        """Tilde in workspace root survives full Config construction."""
+        cfg = Config.from_yaml({"workspace": {"root": "~/symphony_ws"}})
+        assert cfg.workspace.root == "~/symphony_ws"

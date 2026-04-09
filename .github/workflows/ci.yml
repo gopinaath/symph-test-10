@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" || \
+            pip install pydantic pyyaml jinja2 httpx fastapi uvicorn \
+              pytest pytest-asyncio pytest-timeout respx mypy ruff types-PyYAML
+
+      - name: Ruff check
+        run: ruff check symphony/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check symphony/ tests/
+
+      - name: Mypy
+        run: mypy symphony/
+
+      - name: Tests (excluding e2e)
+        run: PYTHONPATH=. pytest tests/ -v --timeout=30 -k "not e2e"

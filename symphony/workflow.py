@@ -6,8 +6,8 @@ lines followed by a Jinja2 template body.
 
 from __future__ import annotations
 
+import asyncio
 import os
-import threading
 from dataclasses import dataclass, field
 
 import yaml
@@ -106,52 +106,65 @@ class _FileStamp:
 
 @dataclass
 class WorkflowStore:
-    """Caches the last good ``Workflow`` and polls for changes."""
+    """Caches the last good ``Workflow`` and polls for changes.
+
+    Uses ``asyncio`` for the polling loop and ``asyncio.Lock`` for
+    concurrent-safe cache access.  Call :meth:`start` / :meth:`stop`
+    to manage the background polling task lifecycle.
+    """
 
     path: str
     poll_interval: float = 1.0  # seconds
 
     _workflow: Workflow | None = field(default=None, init=False, repr=False)
     _stamp: _FileStamp = field(default_factory=_FileStamp, init=False, repr=False)
-    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
-    _stop_event: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
-    _poll_thread: threading.Thread | None = field(default=None, init=False, repr=False)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _poll_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _last_error: Exception | None = field(default=None, init=False, repr=False)
+    _stopped: bool = field(default=False, init=False, repr=False)
 
     # -- public API ----------------------------------------------------------
 
-    def init(self) -> Workflow:
+    async def init(self) -> Workflow:
         """Load the workflow for the first time.
 
         Raises on failure (file missing / invalid).
         """
         wf = Workflow.parse(self.path)
-        with self._lock:
+        async with self._lock:
             self._workflow = wf
             self._stamp = self._current_stamp()
         return wf
 
     @property
     def workflow(self) -> Workflow | None:
-        with self._lock:
+        """Return the cached workflow (non-blocking snapshot)."""
+        return self._workflow
+
+    async def get_workflow(self) -> Workflow | None:
+        """Return the cached workflow under the async lock."""
+        async with self._lock:
             return self._workflow
 
     @property
     def last_error(self) -> Exception | None:
-        with self._lock:
-            return self._last_error
+        return self._last_error
 
-    def start_polling(self) -> None:
+    async def start(self) -> None:
         """Begin background polling for file changes."""
-        self._stop_event.clear()
-        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True, name="workflow-poll")
-        self._poll_thread.start()
+        self._stopped = False
+        self._poll_task = asyncio.create_task(self._poll_loop())
 
-    def stop_polling(self) -> None:
-        self._stop_event.set()
-        if self._poll_thread is not None:
-            self._poll_thread.join(timeout=5)
-            self._poll_thread = None
+    async def stop(self) -> None:
+        """Cancel the polling task and wait for it to finish."""
+        self._stopped = True
+        if self._poll_task is not None:
+            self._poll_task.cancel()
+            try:
+                await self._poll_task
+            except asyncio.CancelledError:
+                pass
+            self._poll_task = None
 
     # -- internal ------------------------------------------------------------
 
@@ -162,28 +175,31 @@ class WorkflowStore:
         except OSError:
             return _FileStamp()
 
-    def _poll_loop(self) -> None:
-        while not self._stop_event.is_set():
-            self._stop_event.wait(timeout=self.poll_interval)
-            if self._stop_event.is_set():
+    async def _poll_loop(self) -> None:
+        while not self._stopped:
+            try:
+                await asyncio.sleep(self.poll_interval)
+            except asyncio.CancelledError:
+                return
+            if self._stopped:
                 break
-            self._try_reload()
+            await self._try_reload()
 
-    def _try_reload(self) -> None:
+    async def _try_reload(self) -> None:
         stamp = self._current_stamp()
-        with self._lock:
+        async with self._lock:
             if stamp.mtime == self._stamp.mtime and stamp.size == self._stamp.size:
                 return
 
         # File changed — attempt reload.
         try:
             wf = Workflow.parse(self.path)
-            with self._lock:
+            async with self._lock:
                 self._workflow = wf
                 self._stamp = stamp
                 self._last_error = None
         except Exception as exc:
             # Keep last good workflow.
-            with self._lock:
+            async with self._lock:
                 self._stamp = stamp  # avoid retrying same bad stamp every tick
                 self._last_error = exc

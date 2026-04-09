@@ -154,17 +154,22 @@ def _get_worker_name(config: Config) -> str | None:
 class Orchestrator:
     """Core polling-loop orchestrator for Symphony."""
 
+    # Grace period for agent tasks to finish before force-cancellation.
+    AGENT_GRACE_PERIOD: float = 5.0  # seconds
+
     def __init__(
         self,
         config: Config,
         tracker: Tracker,
         workspace: Any,  # Workspace or compatible duck-type
         agent_runner_factory: AgentRunnerFactory,
+        status_dashboard: Any | None = None,
     ) -> None:
         self._config = config
         self._tracker = tracker
         self._workspace = workspace
         self._agent_runner_factory = agent_runner_factory
+        self._status_dashboard = status_dashboard
 
         # --- internal state ---
         self._running: dict[str, RunningEntry] = {}
@@ -191,6 +196,9 @@ class Orchestrator:
         # Retry timer tasks keyed by issue identifier -> (token, Task)
         self._retry_timers: dict[str, tuple[str, asyncio.Task[None]]] = {}
 
+        # Whether stop() has been called (for idempotency).
+        self._is_stopped = False
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -203,27 +211,70 @@ class Orchestrator:
         self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def stop(self) -> None:
-        """Gracefully shut down: cancel running agents, cancel poll loop."""
+        """Gracefully shut down the orchestrator.
+
+        1. Cancels the polling loop task.
+        2. Cancels all retry timer tasks.
+        3. Cancels all running agent tasks with a grace period
+           (``AGENT_GRACE_PERIOD`` seconds) — waits for agents to finish
+           or forces cancellation on timeout.
+        4. Marks all agents as stopped and cleans up internal state.
+        5. Renders offline status on the ``status_dashboard`` if available.
+
+        This method is idempotent: calling it multiple times is safe.
+        """
+        if self._is_stopped:
+            return
+        self._is_stopped = True
+
         self._stop_event.set()
         self._refresh_event.set()  # wake any sleeping poll
 
-        # Cancel all retry timers
-        for _token, timer_task in self._retry_timers.values():
-            timer_task.cancel()
-        self._retry_timers.clear()
-
-        # Cancel running agent tasks
-        for entry in list(self._running.values()):
-            entry.task.cancel()
-        tasks = [entry.task for entry in self._running.values()]
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        self._running.clear()
-
+        # 1. Cancel the polling loop task.
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
+        self._poll_task = None
+
+        # 2. Cancel all retry timers.
+        for _token, timer_task in self._retry_timers.values():
+            timer_task.cancel()
+        self._retry_timers.clear()
+        self._retry_queue.clear()
+
+        # 3. Cancel running agent tasks with a grace period.
+        agent_tasks = [entry.task for entry in self._running.values()]
+        if agent_tasks:
+            # Request cancellation for every agent.
+            for entry in list(self._running.values()):
+                entry.task.cancel()
+
+            # Wait up to AGENT_GRACE_PERIOD for agents to finish gracefully.
+            _done, pending = await asyncio.wait(
+                agent_tasks, timeout=self.AGENT_GRACE_PERIOD
+            )
+
+            # Force-cancel any that did not finish within the grace period.
+            for t in pending:
+                t.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        # 4. Mark agents as stopped / clean up state.
+        self._running.clear()
+
+        # 5. Render offline status if a dashboard is available.
+        if self._status_dashboard is not None:
+            try:
+                render = getattr(self._status_dashboard, "render_offline", None)
+                if render is not None:
+                    if asyncio.iscoroutinefunction(render):
+                        await render()
+                    else:
+                        render()
+            except Exception:
+                logger.exception("Failed to render offline status on dashboard")
 
     def snapshot(self) -> OrchestratorSnapshot:
         """Return a point-in-time snapshot of the orchestrator state."""

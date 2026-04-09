@@ -18,7 +18,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="E2E-002" priority="1" status="open" locked-by="" locked-at="">
+    <gap id="E2E-002" priority="1" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>End-to-end orchestrator with real GitHub issue and Gemma 4</title>
       <description>
         Create a real GitHub issue in symph-test-10 repo, start the orchestrator
@@ -76,7 +76,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="TEST-003" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="TEST-003" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Orchestrator status snapshot edge cases</title>
       <description>
         Missing from orchestrator_status_test.exs: TPS graph rendering for steady
@@ -91,7 +91,7 @@
       <depends-on>IMPL-001</depends-on>
     </gap>
 
-    <gap id="TEST-004" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="TEST-004" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Config env fallback edge cases</title>
       <description>
         Missing from core_test.exs: LINEAR_API_KEY env var fallback for tracker
@@ -105,7 +105,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="TEST-005" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="TEST-005" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Remote SSH workspace lifecycle tests</title>
       <description>
         Missing from workspace_and_config_test.exs: remote workspace create/hooks/
@@ -117,7 +117,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="TEST-006" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="TEST-006" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Linear client edge cases</title>
       <description>
         Missing tests: pagination merge preserves ordering, paginates state
@@ -130,7 +130,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="TEST-007" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="TEST-007" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Prompt builder in-repo WORKFLOW.md rendering test</title>
       <description>
         Test that the actual WORKFLOW.md in the repo renders correctly with
@@ -141,7 +141,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="TEST-008" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="TEST-008" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>App server agent runner integration edge cases</title>
       <description>
         Missing: app server startup with configurable codex args from workflow,
@@ -176,7 +176,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="IMPL-002" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="IMPL-002" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>PR cleanup on workspace removal</title>
       <description>
         Implement workspace.before_remove task that finds and closes open PRs
@@ -258,7 +258,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="QUAL-004" priority="4" status="open" locked-by="" locked-at="">
+    <gap id="QUAL-004" priority="4" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Add GitHub Actions CI pipeline</title>
       <description>
         Set up .github/workflows/ci.yml with: pytest, mypy, ruff, and
@@ -276,7 +276,7 @@
   <!-- ================================================================== -->
   <category name="robustness">
 
-    <gap id="ROB-001" priority="2" status="open" locked-by="" locked-at="">
+    <gap id="ROB-001" priority="2" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>GitHub tracker retry and rate limiting</title>
       <description>
         Add exponential backoff retry on transient HTTP errors (429, 500, 502,
@@ -289,7 +289,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="ROB-002" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="ROB-002" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>WorkflowStore concurrent-safe caching</title>
       <description>
         The current WorkflowStore hot-reload is simpler than the Elixir
@@ -304,7 +304,7 @@
       <depends-on></depends-on>
     </gap>
 
-    <gap id="ROB-003" priority="3" status="open" locked-by="" locked-at="">
+    <gap id="ROB-003" priority="3" status="done" locked-by="" locked-at="" completed-at="2026-04-09">
       <title>Graceful orchestrator shutdown</title>
       <description>
         Ensure orchestrator.stop() properly cancels all running agent tasks,

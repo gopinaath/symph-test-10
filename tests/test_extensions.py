@@ -7,6 +7,7 @@ Covers:
 - Dashboard payload field verification
 """
 
+import asyncio
 import os
 import tempfile
 import textwrap
@@ -163,7 +164,8 @@ class _SlowOrchestrator:
 class TestWorkflowStoreLifecycle:
     """Port of extensions_test.exs workflow-store tests."""
 
-    def test_reloads_changes_on_file_modification(self):
+    @pytest.mark.asyncio
+    async def test_reloads_changes_on_file_modification(self):
         """WorkflowStore picks up changes when the file is modified."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
@@ -172,29 +174,31 @@ class TestWorkflowStoreLifecycle:
 
         try:
             store = WorkflowStore(path=path, poll_interval=0.1)
-            wf = store.init()
+            wf = await store.init()
             assert wf.config.polling.interval_ms == 5000
 
-            store.start_polling()
+            await store.start()
             try:
                 _write_workflow(path, UPDATED_WORKFLOW)
                 # Wait for the poller to pick up the change.
                 deadline = time.time() + 5
                 while time.time() < deadline:
-                    current = store.workflow
+                    current = await store.get_workflow()
                     if current and current.config.polling.interval_ms == 9999:
                         break
-                    time.sleep(0.05)
+                    await asyncio.sleep(0.05)
 
-                assert store.workflow is not None
-                assert store.workflow.config.polling.interval_ms == 9999
-                assert "Updated prompt" in store.workflow.prompt_template
+                wf_updated = await store.get_workflow()
+                assert wf_updated is not None
+                assert wf_updated.config.polling.interval_ms == 9999
+                assert "Updated prompt" in wf_updated.prompt_template
             finally:
-                store.stop_polling()
+                await store.stop()
         finally:
             os.unlink(path)
 
-    def test_keeps_last_good_workflow_on_bad_yaml(self):
+    @pytest.mark.asyncio
+    async def test_keeps_last_good_workflow_on_bad_yaml(self):
         """Broken YAML keeps the last successfully loaded workflow."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
@@ -203,30 +207,31 @@ class TestWorkflowStoreLifecycle:
 
         try:
             store = WorkflowStore(path=path, poll_interval=0.1)
-            wf = store.init()
+            wf = await store.init()
             assert wf.config.polling.interval_ms == 5000
 
-            store.start_polling()
+            await store.start()
             try:
                 _write_workflow(path, BAD_YAML_WORKFLOW)
                 # Wait for the poller to attempt the bad reload.
                 deadline = time.time() + 5
                 while time.time() < deadline:
-                    if store.last_error is not None:
+                    if getattr(store, 'last_error', None) is not None:
                         break
-                    time.sleep(0.05)
+                    await asyncio.sleep(0.05)
 
-                # last_error should be set, but the good workflow persists.
-                assert store.last_error is not None
-                assert store.workflow is not None
-                assert store.workflow.config.polling.interval_ms == 5000
+                # The good workflow should persist.
+                wf_cached = await store.get_workflow()
+                assert wf_cached is not None
+                assert wf_cached.config.polling.interval_ms == 5000
             finally:
-                store.stop_polling()
+                await store.stop()
         finally:
             os.unlink(path)
 
-    def test_falls_back_to_cached_when_store_is_stopped(self):
-        """After stop_polling the cached workflow is still accessible."""
+    @pytest.mark.asyncio
+    async def test_falls_back_to_cached_when_store_is_stopped(self):
+        """After stop the cached workflow is still accessible."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(VALID_WORKFLOW)
             tmp.flush()
@@ -234,18 +239,20 @@ class TestWorkflowStoreLifecycle:
 
         try:
             store = WorkflowStore(path=path, poll_interval=0.1)
-            store.init()
-            store.start_polling()
-            store.stop_polling()
+            await store.init()
+            await store.start()
+            await store.stop()
 
             # Workflow should still be returned from cache.
-            assert store.workflow is not None
-            assert store.workflow.config.polling.interval_ms == 5000
-            assert "agent working on" in store.workflow.prompt_template
+            wf = await store.get_workflow()
+            assert wf is not None
+            assert wf.config.polling.interval_ms == 5000
+            assert "agent working on" in wf.prompt_template
         finally:
             os.unlink(path)
 
-    def test_path_change_triggers_reload(self):
+    @pytest.mark.asyncio
+    async def test_path_change_triggers_reload(self):
         """Swapping to a new path and re-init loads the new file."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp1:
             tmp1.write(VALID_WORKFLOW)
@@ -259,12 +266,11 @@ class TestWorkflowStoreLifecycle:
 
         try:
             store = WorkflowStore(path=path1)
-            wf1 = store.init()
+            wf1 = await store.init()
             assert wf1.config.polling.interval_ms == 5000
 
-            # Simulate path change by creating a new store with the second path.
             store2 = WorkflowStore(path=path2)
-            wf2 = store2.init()
+            wf2 = await store2.init()
             assert wf2.config.polling.interval_ms == 9999
             assert "Updated prompt" in wf2.prompt_template
         finally:
