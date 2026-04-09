@@ -1,0 +1,197 @@
+"""Tests for symphony.prompt_builder."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from symphony.prompt_builder import (
+    DEFAULT_TEMPLATE,
+    PromptBuildError,
+    build_prompt,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_issue(**overrides) -> dict:
+    base = {
+        "id": "issue-1",
+        "identifier": "PROJ-42",
+        "title": "Fix the widget",
+        "description": "The widget is broken.",
+        "priority": 2,
+        "state": "todo",
+        "branch_name": "fix-widget",
+        "url": "https://example.com/PROJ-42",
+        "assignee_id": "user-1",
+        "blocked_by": [],
+        "labels": ["bug"],
+        "assigned_to_worker": True,
+        "created_at": None,
+        "updated_at": None,
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------------------------------------------------------------------------
+# Rendering basics
+# ---------------------------------------------------------------------------
+
+
+class TestRendering:
+    def test_renders_issue_and_attempt(self) -> None:
+        tpl = "Issue: {{ issue.identifier }} (attempt {{ attempt }})"
+        result = build_prompt(tpl, _make_issue(), attempt=1)
+        assert "PROJ-42" in result
+        assert "attempt 1" in result
+
+    def test_renders_issue_fields(self) -> None:
+        tpl = "Title: {{ issue.title }}\nState: {{ issue.state }}"
+        result = build_prompt(tpl, _make_issue(), attempt=1)
+        assert "Fix the widget" in result
+        assert "todo" in result
+
+
+# ---------------------------------------------------------------------------
+# DateTime handling
+# ---------------------------------------------------------------------------
+
+
+class TestDateTimeHandling:
+    def test_datetime_fields_do_not_crash(self) -> None:
+        issue = _make_issue(
+            created_at=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2025, 1, 16, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        tpl = "Created: {{ issue.created_at }}"
+        result = build_prompt(tpl, issue, attempt=1)
+        assert "2025-01-15" in result
+
+    def test_normalizes_nested_date_values(self) -> None:
+        issue = _make_issue(
+            blocked_by=[
+                {
+                    "id": "b1",
+                    "identifier": "PROJ-10",
+                    "state": "done",
+                    "due_date": datetime(2025, 6, 1, tzinfo=timezone.utc),
+                }
+            ]
+        )
+        tpl = "Blocker due: {{ issue.blocked_by[0].due_date }}"
+        result = build_prompt(tpl, issue, attempt=1)
+        assert "2025-06-01" in result
+
+
+# ---------------------------------------------------------------------------
+# Strict variable rendering
+# ---------------------------------------------------------------------------
+
+
+class TestStrictUndefined:
+    def test_unknown_variable_raises(self) -> None:
+        tpl = "Hello {{ unknown_var }}"
+        with pytest.raises(PromptBuildError, match="Undefined variable"):
+            build_prompt(tpl, _make_issue(), attempt=1)
+
+    def test_unknown_nested_variable_raises(self) -> None:
+        tpl = "Hello {{ issue.nonexistent_field }}"
+        with pytest.raises(PromptBuildError, match="Undefined variable"):
+            build_prompt(tpl, _make_issue(), attempt=1)
+
+
+# ---------------------------------------------------------------------------
+# Invalid template syntax
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidTemplate:
+    def test_surfaces_syntax_error_with_context(self) -> None:
+        tpl = "{% if true %}oops"  # missing endif
+        with pytest.raises(PromptBuildError, match="Template syntax error"):
+            build_prompt(tpl, _make_issue(), attempt=1)
+
+    def test_unclosed_variable_tag(self) -> None:
+        tpl = "Hello {{ issue.title"
+        with pytest.raises(PromptBuildError, match="Template syntax error"):
+            build_prompt(tpl, _make_issue(), attempt=1)
+
+
+# ---------------------------------------------------------------------------
+# Default template
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultTemplate:
+    def test_blank_prompt_uses_default(self) -> None:
+        result = build_prompt("", _make_issue(), attempt=1)
+        assert "PROJ-42" in result
+        assert "Fix the widget" in result
+
+    def test_whitespace_only_uses_default(self) -> None:
+        result = build_prompt("   \n  ", _make_issue(), attempt=1)
+        assert "PROJ-42" in result
+
+    def test_default_template_handles_missing_description(self) -> None:
+        issue = _make_issue(description="")
+        result = build_prompt("", issue, attempt=1)
+        assert "PROJ-42" in result
+        assert "Fix the widget" in result
+        # Description block should not appear since description is empty.
+        assert "Description:" not in result
+
+    def test_default_template_handles_none_description(self) -> None:
+        issue = _make_issue(description=None)
+        result = build_prompt("", issue, attempt=1)
+        assert "PROJ-42" in result
+
+
+# ---------------------------------------------------------------------------
+# Workflow load failures reported separately
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowLoadFailure:
+    """Ensure that template build errors and workflow parse errors are
+    distinct — a bad template does not masquerade as a workflow error."""
+
+    def test_bad_template_raises_prompt_build_error(self) -> None:
+        with pytest.raises(PromptBuildError):
+            build_prompt("{% invalid %}", _make_issue(), attempt=1)
+
+    def test_workflow_file_error_is_file_not_found(self) -> None:
+        from symphony.workflow import Workflow
+
+        with pytest.raises(FileNotFoundError):
+            Workflow.parse("/nonexistent/path/WORKFLOW.md")
+
+
+# ---------------------------------------------------------------------------
+# Continuation guidance for retries
+# ---------------------------------------------------------------------------
+
+
+class TestContinuationGuidance:
+    def test_no_guidance_on_first_attempt(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(tpl, _make_issue(), attempt=1)
+        assert "attempt" not in result.lower() or "attempt 1" not in result.lower()
+        assert "previous attempt" not in result.lower()
+
+    def test_guidance_added_on_retry(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(tpl, _make_issue(), attempt=2)
+        assert "attempt 2" in result.lower()
+        assert "previous attempt" in result.lower()
+
+    def test_guidance_on_higher_attempt(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(tpl, _make_issue(), attempt=5)
+        assert "attempt 5" in result.lower()
+        assert "different approach" in result.lower()
