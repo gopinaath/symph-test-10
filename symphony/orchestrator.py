@@ -81,6 +81,8 @@ class AgentResult:
     total_tokens: int = 0
     error: str | None = None
     rate_limits: dict[str, Any] | None = None
+    validation_passed: bool = False
+    validation_output: str = ""
 
 
 # The runner receives (issue, workspace_path, worker_host) and returns an
@@ -720,12 +722,31 @@ class Orchestrator:
                 preferred_host=worker_host,
             )
         else:
-            self._completed.add(identifier)
-            states = await self._tracker.fetch_issue_states_by_ids([identifier])
-            current_state = states.get(identifier)
-            if current_state and self._tracker.is_active_state(current_state):
-                self._completed.discard(identifier)
-                self._schedule_continuation_retry(issue, preferred_host=worker_host)
+            # Check if validation gating should block completion.
+            validation_cfg = getattr(self._config, "validation", None)
+            validation_required = (
+                validation_cfg is not None
+                and getattr(validation_cfg, "enabled", False)
+                and getattr(validation_cfg, "required_for_completion", True)
+            )
+
+            if validation_required and result and not result.validation_passed:
+                # Validation was required but did not pass — treat as failure.
+                next_attempt = attempt + 1
+                truncated_output = (result.validation_output or "")[:500]
+                self._schedule_failure_retry(
+                    issue,
+                    attempt=next_attempt,
+                    error=f"validation_failed: {truncated_output}",
+                    preferred_host=worker_host,
+                )
+            else:
+                self._completed.add(identifier)
+                states = await self._tracker.fetch_issue_states_by_ids([identifier])
+                current_state = states.get(identifier)
+                if current_state and self._tracker.is_active_state(current_state):
+                    self._completed.discard(identifier)
+                    self._schedule_continuation_retry(issue, preferred_host=worker_host)
 
     def _update_codex_totals(self, entry: RunningEntry, result: AgentResult) -> None:
         """Merge agent result into the running entry and global totals."""

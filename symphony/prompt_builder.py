@@ -11,6 +11,14 @@ from typing import Any
 from jinja2 import Environment, StrictUndefined, TemplateSyntaxError, UndefinedError
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Maximum length (in characters) for validation output included in a prompt.
+# Anything beyond this is truncated with a notice.
+MAX_VALIDATION_OUTPUT_LENGTH = 20_000
+
+# ---------------------------------------------------------------------------
 # Default template used when the workflow prompt body is blank
 # ---------------------------------------------------------------------------
 
@@ -61,6 +69,8 @@ def build_prompt(
     template_source: str,
     issue: dict[str, Any],
     attempt: int = 1,
+    validation_output: str = "",
+    validation_attempt: int = 0,
 ) -> str:
     """Render the prompt for a given *issue* and *attempt*.
 
@@ -74,6 +84,13 @@ def build_prompt(
     attempt:
         1-based attempt counter.  When ``attempt > 1``, continuation guidance
         is appended after the rendered template.
+    validation_output:
+        Raw output from a validation command (e.g. pytest).  When non-empty a
+        *Validation Failed* section is appended to the prompt so the agent can
+        see what broke.
+    validation_attempt:
+        0-based counter of how many validation fix-up rounds have occurred.
+        When > 0 the prompt notes which attempt this is.
 
     Raises
     ------
@@ -102,6 +119,9 @@ def build_prompt(
     if attempt > 1:
         rendered = _add_continuation_guidance(rendered, attempt)
 
+    if validation_output:
+        rendered = _add_validation_section(rendered, validation_output, validation_attempt)
+
     return rendered
 
 
@@ -114,3 +134,26 @@ def _add_continuation_guidance(rendered: str, attempt: int) -> str:
         f"identify what went wrong, and try a different approach if necessary."
     )
     return rendered + guidance
+
+
+def _add_validation_section(rendered: str, validation_output: str, validation_attempt: int) -> str:
+    """Append a validation failure block to an already-rendered prompt."""
+    # Truncate very long output to keep the prompt manageable.
+    truncated = validation_output
+    if len(truncated) > MAX_VALIDATION_OUTPUT_LENGTH:
+        truncated = (
+            truncated[:MAX_VALIDATION_OUTPUT_LENGTH]
+            + "\n\n... [output truncated] ..."
+        )
+
+    attempt_line = ""
+    if validation_attempt > 0:
+        attempt_line = f"\n\nThis is validation fix-up attempt {validation_attempt}."
+
+    section = (
+        f"\n\n## Validation Failed{attempt_line}\n\n"
+        f"The following test failures occurred after your last changes. "
+        f"Fix them before proceeding:\n\n"
+        f"```\n{truncated}\n```"
+    )
+    return rendered + section

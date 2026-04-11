@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from symphony.codex.app_server import AppServer, AppServerConfig
+from symphony.config import ValidationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ class RunResult:
     turns_executed: int
     total_usage: dict[str, Any] = field(default_factory=dict)
     stopped_reason: str = ""
+    validation_passed: bool = False
+    validation_output: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +140,7 @@ class AgentRunner:
         *,
         callback: RunUpdateCallback | None = None,
         reuse_workspace: bool = False,
+        validation_config: ValidationConfig | None = None,
     ) -> RunResult:
         """Execute the issue end-to-end and return the result."""
 
@@ -173,6 +177,9 @@ class AgentRunner:
             total_usage: dict[str, Any] = {}
             turns_executed = 0
             stopped_reason = "max_turns"
+            validation_passed = False
+            validation_output = ""
+            validation_feedback: str | None = None  # feedback from failed validation
 
             for turn_number in range(1, self._config.max_turns + 1):
                 # Check if the issue has moved to a terminal state.
@@ -181,7 +188,15 @@ class AgentRunner:
                     break
 
                 # Build prompt.
-                if self._prompt_builder is not None:
+                if validation_feedback is not None:
+                    # Override prompt with validation failure context so the
+                    # agent can attempt to fix the issue.
+                    prompt = (
+                        f"The previous attempt failed validation. "
+                        f"Please fix the issues and try again.\n\n"
+                        f"Validation output:\n{validation_feedback}"
+                    )
+                elif self._prompt_builder is not None:
                     if turn_number == 1:
                         prompt = self._prompt_builder.initial_prompt(issue)
                     else:
@@ -202,11 +217,33 @@ class AgentRunner:
                 if callback:
                     await callback.turn_completed(turn_number, turn_usage)
 
+                # Reset validation feedback for next iteration.
+                validation_feedback = None
+
+                # 5. After-turn validation.
+                if (
+                    validation_config is not None
+                    and validation_config.enabled
+                    and hasattr(workspace, "run_validation")
+                ):
+                    v_result = await workspace.run_validation(issue.id, validation_config)
+                    if v_result.passed:
+                        validation_passed = True
+                        validation_output = v_result.stdout
+                        stopped_reason = "validation_passed"
+                        break
+                    else:
+                        # Collect output for feedback and potential final result.
+                        validation_output = v_result.stderr or v_result.stdout
+                        validation_feedback = validation_output
+
             result_obj = RunResult(
                 issue_id=issue.id,
                 turns_executed=turns_executed,
                 total_usage=total_usage,
                 stopped_reason=stopped_reason,
+                validation_passed=validation_passed,
+                validation_output=validation_output,
             )
         finally:
             await server.stop()

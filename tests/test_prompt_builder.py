@@ -282,3 +282,67 @@ class TestInRepoWorkflow:
 
         # The WORKFLOW.md has a retry context block for attempt > 1.
         assert "attempt 3" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Validation failure context
+# ---------------------------------------------------------------------------
+
+
+class TestValidationContext:
+    def test_validation_output_rendered_in_prompt(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(
+            tpl, _make_issue(), attempt=1, validation_output="FAILED: test_foo"
+        )
+        assert "Validation Failed" in result
+        assert "FAILED: test_foo" in result
+
+    def test_empty_validation_output_produces_no_block(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(tpl, _make_issue(), attempt=1, validation_output="")
+        assert "Validation Failed" not in result
+
+    def test_validation_attempt_shown_when_positive(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(
+            tpl,
+            _make_issue(),
+            attempt=1,
+            validation_output="FAILED: test_bar",
+            validation_attempt=2,
+        )
+        assert "attempt 2" in result.lower()
+
+    def test_validation_context_combined_with_retry_context(self) -> None:
+        tpl = "Do the thing."
+        result = build_prompt(
+            tpl,
+            _make_issue(),
+            attempt=2,
+            validation_output="FAILED: test_baz",
+            validation_attempt=2,
+        )
+        # Retry guidance from attempt > 1
+        assert "previous attempt" in result.lower()
+        # Validation block
+        assert "Validation Failed" in result
+        assert "FAILED: test_baz" in result
+        assert "attempt 2" in result.lower()
+
+    def test_validation_output_truncated_for_very_long_output(self) -> None:
+        from symphony.prompt_builder import MAX_VALIDATION_OUTPUT_LENGTH
+
+        long_output = "x" * 100_000  # 100 KB
+        result = build_prompt(
+            "Do the thing.",
+            _make_issue(),
+            attempt=1,
+            validation_output=long_output,
+        )
+        assert "Validation Failed" in result
+        # The raw output should have been truncated.
+        assert "[output truncated]" in result
+        # The total embedded validation output should not exceed the limit
+        # plus the truncation notice.
+        assert len(result) < MAX_VALIDATION_OUTPUT_LENGTH + 1000

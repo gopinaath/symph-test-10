@@ -46,6 +46,13 @@ observability:
 server:
   port: 4000
   host: 0.0.0.0
+
+validation:
+  enabled: true
+  command: "cd {{ workspace_path }} && python -m pytest --tb=short -q 2>&1 || true"
+  timeout_ms: 120000
+  max_attempts: 3
+  required_for_completion: true
 ---
 You are an autonomous software engineer working on issue {{ issue.identifier }}: {{ issue.title }}.
 

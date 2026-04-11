@@ -15,6 +15,7 @@ from symphony.config import (
     Config,
     PollingConfig,
     TrackerConfig,
+    ValidationConfig,
     set_config,
     settings,
 )
@@ -421,3 +422,68 @@ class TestWorkspaceRootTildeExpansion:
         """Tilde in workspace root survives full Config construction."""
         cfg = Config.from_yaml({"workspace": {"root": "~/symphony_ws"}})
         assert cfg.workspace.root == "~/symphony_ws"
+
+
+# ---------------------------------------------------------------------------
+# ValidationConfig
+# ---------------------------------------------------------------------------
+
+
+class TestValidationConfig:
+    def test_validation_config_defaults(self) -> None:
+        vc = ValidationConfig()
+        assert vc.enabled is False
+        assert vc.command is None
+        assert vc.timeout_ms == 120_000
+        assert vc.max_attempts == 3
+        assert vc.required_for_completion is True
+        assert vc.assertions == []
+
+    def test_validation_config_from_yaml(self) -> None:
+        cfg = Config.from_yaml(
+            {
+                "validation": {
+                    "enabled": True,
+                    "command": "pytest --tb=short",
+                    "timeout_ms": 60000,
+                    "max_attempts": 5,
+                    "required_for_completion": False,
+                    "assertions": [
+                        {"kind": "file_exists", "path": "setup.py"},
+                        {
+                            "kind": "command_exit_code",
+                            "command": "make lint",
+                            "expected": 0,
+                        },
+                    ],
+                }
+            }
+        )
+        vc = cfg.validation
+        assert vc.enabled is True
+        assert vc.command == "pytest --tb=short"
+        assert vc.timeout_ms == 60000
+        assert vc.max_attempts == 5
+        assert vc.required_for_completion is False
+        assert len(vc.assertions) == 2
+        assert vc.assertions[0]["kind"] == "file_exists"
+        assert vc.assertions[1]["command"] == "make lint"
+
+    def test_validation_config_timeout_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            ValidationConfig(timeout_ms=0)
+        with pytest.raises(ValidationError):
+            ValidationConfig(timeout_ms=-1)
+
+    def test_validation_assertions_schema(self) -> None:
+        vc = ValidationConfig(
+            assertions=[
+                {"kind": "file_exists", "path": "README.md"},
+                {"kind": "file_contains", "path": "main.py", "pattern": "def main"},
+                {"kind": "command_exit_code", "command": "echo ok", "expected": 0},
+            ]
+        )
+        assert len(vc.assertions) == 3
+        assert vc.assertions[0]["kind"] == "file_exists"
+        assert vc.assertions[1]["kind"] == "file_contains"
+        assert vc.assertions[2]["kind"] == "command_exit_code"

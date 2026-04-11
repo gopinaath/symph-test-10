@@ -7,9 +7,11 @@ import contextlib
 import os
 import re
 import shutil
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from symphony.config import ValidationConfig
 from symphony.path_safety import SafeResolveError, safe_resolve
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9._-]")
@@ -34,6 +36,18 @@ class WorkspaceConfig:
     before_remove: str | None = None
     hook_timeout: float = _DEFAULT_HOOK_TIMEOUT
     ssh_host: str | None = None  # None means local
+
+
+@dataclass
+class ValidationResult:
+    """Result of a validation run."""
+
+    passed: bool
+    exit_code: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    duration_ms: float = 0
+    assertion_results: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -94,6 +108,40 @@ async def _run_hook(
         return HookError(message=str(exc))
 
     return None
+
+
+async def _run_command_capturing(
+    command: str,
+    cwd: str,
+    timeout: float,
+) -> tuple[int, str, str]:
+    """Run command and return (exit_code, stdout, stderr).
+
+    Unlike ``_run_hook``, this always captures and returns both stdout and stderr.
+    On timeout the process is killed and exit_code is returned as -1.
+    """
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.wait()
+            return (-1, "", f"command timed out after {timeout}s")
+
+        stdout_text = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
+        stderr_text = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
+        return (proc.returncode or 0, stdout_text, stderr_text)
+    except OSError as exc:
+        return (-1, "", str(exc))
 
 
 class Workspace:
@@ -212,6 +260,116 @@ class Workspace:
             str(ws),
             timeout=self.config.hook_timeout,
             env_extra={"WORKSPACE": str(ws), "IDENTIFIER": identifier},
+        )
+
+    # ------------------------------------------------------------------
+    # validation
+    # ------------------------------------------------------------------
+
+    async def run_validation(
+        self, identifier: str, config: ValidationConfig,
+    ) -> ValidationResult:
+        """Run validation suite: deterministic assertions first, then test command."""
+        ws = self.path_for(identifier)
+        ws_str = str(ws)
+        start = time.monotonic()
+
+        assertion_results: list[dict[str, object]] = []
+
+        # 1. Run deterministic assertions first
+        for assertion in config.assertions:
+            kind = assertion.get("kind")
+            result: dict[str, object]
+
+            if kind == "file_exists":
+                path = ws / assertion["path"]
+                passed = path.exists()
+                result = {
+                    "kind": kind,
+                    "path": assertion["path"],
+                    "passed": passed,
+                }
+                assertion_results.append(result)
+                if not passed:
+                    elapsed = (time.monotonic() - start) * 1000
+                    return ValidationResult(
+                        passed=False,
+                        assertion_results=assertion_results,
+                        duration_ms=elapsed,
+                    )
+
+            elif kind == "file_contains":
+                path = ws / assertion["path"]
+                pattern = assertion["pattern"]
+                try:
+                    content = path.read_text()
+                    passed = re.search(pattern, content) is not None
+                except (OSError, FileNotFoundError):
+                    passed = False
+                result = {
+                    "kind": kind,
+                    "path": assertion["path"],
+                    "pattern": pattern,
+                    "passed": passed,
+                }
+                assertion_results.append(result)
+                if not passed:
+                    elapsed = (time.monotonic() - start) * 1000
+                    return ValidationResult(
+                        passed=False,
+                        assertion_results=assertion_results,
+                        duration_ms=elapsed,
+                    )
+
+            elif kind == "command_exit_code":
+                cmd = assertion["command"]
+                expected = assertion.get("expected", 0)
+                timeout_s = config.timeout_ms / 1000
+                exit_code, cmd_stdout, cmd_stderr = await _run_command_capturing(
+                    cmd, ws_str, timeout_s,
+                )
+                passed = exit_code == expected
+                result = {
+                    "kind": kind,
+                    "command": cmd,
+                    "expected": expected,
+                    "actual": exit_code,
+                    "passed": passed,
+                }
+                assertion_results.append(result)
+                if not passed:
+                    elapsed = (time.monotonic() - start) * 1000
+                    return ValidationResult(
+                        passed=False,
+                        exit_code=exit_code,
+                        stdout=cmd_stdout,
+                        stderr=cmd_stderr,
+                        assertion_results=assertion_results,
+                        duration_ms=elapsed,
+                    )
+
+        # 2. If all assertions pass and config.command is set, run the test command
+        if config.command:
+            timeout_s = config.timeout_ms / 1000
+            exit_code, stdout, stderr = await _run_command_capturing(
+                config.command, ws_str, timeout_s,
+            )
+            elapsed = (time.monotonic() - start) * 1000
+            return ValidationResult(
+                passed=exit_code == 0,
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                assertion_results=assertion_results,
+                duration_ms=elapsed,
+            )
+
+        # No command and all assertions passed
+        elapsed = (time.monotonic() - start) * 1000
+        return ValidationResult(
+            passed=True,
+            assertion_results=assertion_results,
+            duration_ms=elapsed,
         )
 
     # ------------------------------------------------------------------

@@ -139,6 +139,22 @@ class CodexConfig(BaseModel):
         return v
 
 
+class ValidationConfig(BaseModel):
+    enabled: bool = False
+    command: str | None = None
+    timeout_ms: int = 120_000
+    max_attempts: int = 3
+    required_for_completion: bool = True
+    assertions: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("timeout_ms")
+    @classmethod
+    def _positive_timeout(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("validation.timeout_ms must be positive")
+        return v
+
+
 class HooksConfig(BaseModel):
     after_create: str | None = None
     before_run: str | None = None
@@ -173,6 +189,7 @@ class Config(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    validation: ValidationConfig = Field(default_factory=ValidationConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
