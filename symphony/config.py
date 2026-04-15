@@ -98,12 +98,21 @@ class AgentConfig(BaseModel):
     max_turns: int = 20
     max_retry_backoff_ms: int = 300000
     max_concurrent_agents_by_state: dict[str, int] = Field(default_factory=dict)
+    agent_mode: str = "single"  # "single" or "two_phase"
 
     @field_validator("max_turns")
     @classmethod
     def _positive_turns(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("agent.max_turns must be positive")
+        return v
+
+    @field_validator("agent_mode")
+    @classmethod
+    def _validate_agent_mode(cls, v: str) -> str:
+        allowed = {"single", "two_phase"}
+        if v not in allowed:
+            raise ValueError(f"agent.agent_mode must be one of {allowed}, got {v!r}")
         return v
 
     @field_validator("max_concurrent_agents_by_state", mode="before")
@@ -169,6 +178,24 @@ class ObservabilityConfig(BaseModel):
     render_interval_ms: int = 16
 
 
+class QAConfig(BaseModel):
+    enabled: bool = False
+    prompt_template: str = (
+        "You are a QA engineer reviewing code changes. You did NOT write this code. "
+        "Test each feature through the available tools and report any failures."
+    )
+    approval_policy: str = "suggest"  # read-only, cannot write files
+    max_turns: int = 5
+
+    @field_validator("approval_policy")
+    @classmethod
+    def _validate_qa_policy(cls, v: str) -> str:
+        allowed = {"suggest", "auto-edit", "full-auto", "never"}
+        if v not in allowed:
+            raise ValueError(f"qa.approval_policy must be one of {allowed}, got {v!r}")
+        return v
+
+
 class ServerConfig(BaseModel):
     port: int | None = None
     host: str = "127.0.0.1"
@@ -192,6 +219,7 @@ class Config(BaseModel):
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    qa: QAConfig = Field(default_factory=QAConfig)
 
     # -- convenience ---------------------------------------------------------
 

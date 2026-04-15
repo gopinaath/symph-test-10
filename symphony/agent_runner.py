@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from symphony.codex.app_server import AppServer, AppServerConfig
-from symphony.config import ValidationConfig
+from symphony.config import QAConfig, ValidationConfig
+from symphony.feature_tracker import FeatureTracker
+from symphony.models import FeatureList, FeatureTask
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,10 @@ class RunResult:
     stopped_reason: str = ""
     validation_passed: bool = False
     validation_output: str = ""
+    features_completed: int = 0
+    features_total: int = 0
+    qa_passed: bool = False
+    qa_findings: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -125,11 +134,17 @@ class AgentRunner:
         prompt_builder: PromptBuilder | None = None,
         hook: RunHook | None = None,
         app_server_factory: Callable[..., AppServer] | None = None,
+        agent_mode: str = "single",
+        qa_config: QAConfig | None = None,
+        feature_tracker: FeatureTracker | None = None,
     ) -> None:
         self._config = config or AgentRunnerConfig()
         self._prompt_builder = prompt_builder
         self._hook: RunHook = hook or _NullHook()
         self._app_server_factory = app_server_factory or self._default_app_server
+        self._agent_mode = agent_mode
+        self._qa_config = qa_config or QAConfig()
+        self._feature_tracker = feature_tracker
 
     # -- public API ----------------------------------------------------------
 

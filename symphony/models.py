@@ -51,3 +51,56 @@ class Issue:
             else:
                 result[k] = v
         return result
+
+
+@dataclass
+class FeatureTask:
+    """A decomposed sub-task within an issue."""
+
+    id: str
+    description: str
+    status: str = "pending"  # pending | in_progress | passed | failed
+    category: str = "general"  # functional | style | api | backend | general
+    test_command: str | None = None
+    steps: list[str] = field(default_factory=list)
+    attempts: int = 0
+    max_attempts: int = 3
+    last_error: str = ""
+
+
+@dataclass
+class FeatureList:
+    """Tracks decomposed features for an issue."""
+
+    issue_id: str
+    features: list[FeatureTask] = field(default_factory=list)
+
+    def all_passed(self) -> bool:
+        return bool(self.features) and all(
+            f.status == "passed" for f in self.features
+        )
+
+    def next_pending(self) -> FeatureTask | None:
+        for f in self.features:
+            if f.status in ("pending", "failed"):
+                return f
+        return None
+
+    def progress(self) -> tuple[int, int]:
+        """Return (passed_count, total_count)."""
+        passed = sum(1 for f in self.features if f.status == "passed")
+        return passed, len(self.features)
+
+    def mark_passed(self, feature_id: str) -> None:
+        for f in self.features:
+            if f.id == feature_id:
+                f.status = "passed"
+                return
+
+    def mark_failed(self, feature_id: str, error: str = "") -> None:
+        for f in self.features:
+            if f.id == feature_id:
+                f.status = "failed"
+                f.attempts += 1
+                f.last_error = error
+                return
