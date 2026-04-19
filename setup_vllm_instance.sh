@@ -20,9 +20,10 @@ export DATA=/opt/dlami/nvme
 mkdir -p $DATA/models $DATA/vllm-env
 
 # --- Install python3-venv if needed ---
-if ! python3 -m venv --help &>/dev/null; then
-    echo "[1/4] Installing python3-venv..."
-    sudo apt-get install -y -qq python3.10-venv
+echo "[1/4] Checking python3-venv..."
+if ! python3 -m venv --help &>/dev/null 2>&1; then
+    echo "  Installing python3-venv..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq python3.10-venv
 fi
 
 # --- Create venv and install vLLM ---
