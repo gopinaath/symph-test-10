@@ -28,7 +28,7 @@ class MemoryTracker(Tracker):
         self.comments: dict[str, list[str]] = {}
         self._active_states = active_states or {"InProgress", "in_progress"}
         self._terminal_states = terminal_states or {"Done", "Cancelled", "Canceled"}
-        self._candidate_states = candidate_states or {
+        self._candidate_states = candidate_states or active_states or {
             "Todo",
             "InProgress",
             "in_progress",
